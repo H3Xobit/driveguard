@@ -8,7 +8,7 @@ Site: **https://h3xobit.github.io/driveguard/**
 
 ## Fleet desk
 
-![Fleet desk](web/public/console.png)
+![Fleet desk](web/public/desk.png)
 
 Vehicles, CAS/DMS codes, speed-band scores, session risk, and the Tokyo corridor map on one page. Inject `cas_hmw`, `cas_fcw`, `cas_ldw`, or `dms_distract` against a live API, or read the static snapshot on Pages.
 

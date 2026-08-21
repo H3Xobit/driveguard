@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "driveguard"
 version = "0.1.0"
-description = "CAS/DMS alert scoring for a rolling driving session"
+description = "Operator console for CAS and DMS alerts scored over a driving session"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

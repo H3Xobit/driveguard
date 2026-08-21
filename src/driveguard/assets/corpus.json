@@ -1,0 +1,42 @@
+[
+  {
+    "section_id": "GL-SPEED-01",
+    "title": "Speed envelope and alert scoring",
+    "text": "Sustained speed above the posted or fleet envelope raises kinetic energy and lengthens stopping distance. Score each ADAS event from vehicle speed, with a higher band above 60 km/h. Treat speeding as a primary risk factor when it co-occurs with dense traffic or known crash corridors."
+  },
+  {
+    "section_id": "GL-HMW-02",
+    "title": "Headway warning (cas_hmw)",
+    "text": "cas_hmw is a collision-avoidance headway event. Repeated HMW with short following distance is a leading precursor of rear-end collisions. Increase following distance and review camera clips after a cluster of high brake events."
+  },
+  {
+    "section_id": "GL-LDW-03",
+    "title": "Lane departure warning (cas_ldw)",
+    "text": "cas_ldw fires when the vehicle crosses a lane marking without a corresponding turn signal or road curvature change. High steering variance with LDW is consistent with weaving or distraction. Pull the vehicle for a lane-discipline review before the next trip."
+  },
+  {
+    "section_id": "GL-FCW-04",
+    "title": "Forward collision warning (cas_fcw)",
+    "text": "cas_fcw is the most severe CAS code in this corpus. Combine it with the speed-band score: FCW above 60 km/h is a coaching event, not a dashboard curiosity. Slow, increase gap, and avoid overtaking."
+  },
+  {
+    "section_id": "GL-DMS-05",
+    "title": "Driver monitoring stream",
+    "text": "Treat DMS cues (inattention, heading wander after long duty hours) as a second stream, not a biometric lab. Schedule a rest break and check hours-of-service compliance."
+  },
+  {
+    "section_id": "GL-ZONE-06",
+    "title": "Historical hotspots",
+    "text": "When live CAS activity occurs inside a mapped high-crash zone, treat the two signals together rather than as independent alerts. Slow, increase gap, and avoid overtaking."
+  },
+  {
+    "section_id": "GL-NARR-07",
+    "title": "Incident narrative rules",
+    "text": "Human-readable incident summaries must only cite causes supported by telemetry features or retrieved guideline sections. Do not invent weather, intoxication, biometrics, or mechanical failures that are not in the evidence."
+  },
+  {
+    "section_id": "GL-FILT-08",
+    "title": "Adaptive filtering",
+    "text": "When a fault-severity event is on the board, suppress informational chatter. Safety desks cannot act on every LDW equally. Rank by severity, then by speed-band alert score, then by session risk."
+  }
+]

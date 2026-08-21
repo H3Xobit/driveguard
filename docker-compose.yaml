@@ -1,0 +1,67 @@
+# Host ports are high so this stack does not collide with other local services.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: dg
+      POSTGRES_PASSWORD: dg
+      POSTGRES_DB: driveguard
+    ports:
+      - "35432:5432"
+    volumes:
+      - dg_pgdata:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/010-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dg -d driveguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "31883:1883"
+    volumes:
+      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://dg:dg@db:5432/driveguard
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: "1883"
+      DG_SEED: "42"
+      DG_LOG_LEVEL: INFO
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DG_OFFLINE_LLM: ${DG_OFFLINE_LLM:-1}
+    ports:
+      - "38000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:38000
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "33000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  dg_pgdata:

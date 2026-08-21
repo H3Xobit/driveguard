@@ -1,0 +1,72 @@
+[
+  {
+    "id": "g1",
+    "behavior": "harsh_braking",
+    "expect_high_risk": true,
+    "forbidden_causes": ["intoxication", "ice", "engine fire"],
+    "required_section_prefix": "GL-"
+  },
+  {
+    "id": "g2",
+    "behavior": "speeding",
+    "expect_high_risk": true,
+    "forbidden_causes": ["intoxication", "ice", "engine fire"],
+    "required_section_prefix": "GL-"
+  },
+  {
+    "id": "g3",
+    "behavior": "weaving",
+    "expect_high_risk": true,
+    "forbidden_causes": ["intoxication", "ice", "engine fire"],
+    "required_section_prefix": "GL-"
+  },
+  {
+    "id": "g4",
+    "behavior": "fatigue_drift",
+    "expect_high_risk": true,
+    "forbidden_causes": ["intoxication", "ice", "engine fire"],
+    "required_section_prefix": "GL-"
+  },
+  {
+    "id": "g5",
+    "behavior": "calm",
+    "expect_high_risk": false,
+    "forbidden_causes": ["intoxication", "ice", "engine fire"],
+    "required_section_prefix": "GL-"
+  },
+  {
+    "id": "g6",
+    "behavior": "harsh_braking",
+    "expect_high_risk": true,
+    "forbidden_causes": ["weather unknown", "medical emergency"],
+    "required_section_prefix": "GL-"
+  },
+  {
+    "id": "g7",
+    "behavior": "speeding",
+    "expect_high_risk": true,
+    "forbidden_causes": ["weather unknown", "medical emergency"],
+    "required_section_prefix": "GL-"
+  },
+  {
+    "id": "g8",
+    "behavior": "calm",
+    "expect_high_risk": false,
+    "forbidden_causes": ["lane weaving", "engine fire"],
+    "required_section_prefix": "GL-"
+  },
+  {
+    "id": "g9",
+    "behavior": "weaving",
+    "expect_high_risk": true,
+    "forbidden_causes": ["intoxication"],
+    "required_section_prefix": "GL-"
+  },
+  {
+    "id": "g10",
+    "behavior": "fatigue_drift",
+    "expect_high_risk": true,
+    "forbidden_causes": ["intoxication"],
+    "required_section_prefix": "GL-"
+  }
+]

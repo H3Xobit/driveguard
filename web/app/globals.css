@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: #101114;
+  color: #e4e4e7;
+  min-height: 100vh;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 1px solid #a1a1aa;
+  outline-offset: 2px;
+}

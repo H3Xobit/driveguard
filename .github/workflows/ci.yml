@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  meta-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: API meta smoke
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from driveguard.api.main import app
+          c = TestClient(app)
+          h = c.get("/health")
+          assert h.status_code == 200, h.text
+          m = c.get("/meta")
+          body = m.json()
+          assert body["service"] == "driveguard-api", body
+          assert "harsh_braking" in body["behaviors"], body
+          print("meta ok", body["behaviors"])
+          PY

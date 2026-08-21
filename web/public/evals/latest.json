@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-08-21T08:20:50.564880+00:00",
+  "n": 10,
+  "accuracy": 1.0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "false_positive_rate": 0.0,
+  "narrative_faithfulness": 0.9,
+  "confusion": {
+    "tp": 8,
+    "fp": 0,
+    "tn": 2,
+    "fn": 0
+  },
+  "tp": 8,
+  "fp": 0,
+  "tn": 2,
+  "fn": 0,
+  "snapshot_baselines": [
+    {
+      "model": "random_forest",
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "model": "linear_svm",
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "model": "logistic_regression",
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    {
+      "model": "decision_tree",
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
+  ],
+  "gates": {
+    "accuracy": 0.7,
+    "false_positive_rate": 0.35,
+    "narrative_faithfulness": 0.8
+  }
+}

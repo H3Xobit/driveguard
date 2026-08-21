@@ -1,0 +1,39 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS telemetry (
+    time            TIMESTAMPTZ NOT NULL,
+    vehicle_id      TEXT NOT NULL,
+    speed_kmh       DOUBLE PRECISION NOT NULL,
+    accel_ms2       DOUBLE PRECISION NOT NULL,
+    brake           DOUBLE PRECISION NOT NULL,
+    steering_var    DOUBLE PRECISION NOT NULL,
+    lat             DOUBLE PRECISION NOT NULL,
+    lon             DOUBLE PRECISION NOT NULL,
+    heading_deg     DOUBLE PRECISION NOT NULL,
+    behavior        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS telemetry_vehicle_time ON telemetry (vehicle_id, time DESC);
+
+CREATE TABLE IF NOT EXISTS incidents (
+    id                  BIGSERIAL PRIMARY KEY,
+    incident_id         UUID NOT NULL UNIQUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    vehicle_id          TEXT NOT NULL,
+    severity            TEXT NOT NULL,
+    fused_score         DOUBLE PRECISION NOT NULL,
+    behavior            TEXT NOT NULL,
+    summary             TEXT NOT NULL,
+    contributing        JSONB NOT NULL DEFAULT '[]'::jsonb,
+    recommended_action  TEXT NOT NULL,
+    citations           JSONB NOT NULL DEFAULT '[]'::jsonb,
+    lat                 DOUBLE PRECISION NOT NULL,
+    lon                 DOUBLE PRECISION NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS guideline_chunks (
+    section_id  TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    body        TEXT NOT NULL,
+    embedding   VECTOR(384)
+);

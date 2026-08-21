@@ -5,14 +5,14 @@ from driveguard.simulator.session import iter_session
 
 
 def test_haversine_zero() -> None:
-    assert haversine_m(17.4, 78.5, 17.4, 78.5) == 0
+    assert haversine_m(35.68, 139.76, 35.68, 139.76) == 0
 
 
-def test_cbd_zone_nearby() -> None:
+def test_c1_zone_nearby() -> None:
     assert (ASSETS / "zones.json").is_file()
-    risk, name = zone_risk(17.385, 78.486)
+    risk, name = zone_risk(35.683, 139.776)
     assert risk > 0
-    assert name == "HYD-CBD-01"
+    assert name == "TKY-C1-01"
 
 
 def test_calm_window_lower_than_brake() -> None:

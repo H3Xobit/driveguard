@@ -39,14 +39,14 @@ export const DEMO_VEHICLES: VehicleScore[] = [
     fused: 0.91,
     baseline_rf: 0.79,
     compounding: true,
-    nearest_zone: "HYD-CBD-01",
+    nearest_zone: "TKY-C1-01",
     severity: "fault",
     behavior: "harsh_braking",
     alert: "cas_hmw",
     alert_score: 2.4,
     source: "cas",
-    lat: 17.386,
-    lon: 78.487,
+    lat: 35.684,
+    lon: 139.775,
     speed_kmh: 28,
   },
   {
@@ -62,8 +62,8 @@ export const DEMO_VEHICLES: VehicleScore[] = [
     alert: "none",
     alert_score: 0,
     source: "cas",
-    lat: 17.401,
-    lon: 78.41,
+    lat: 35.690,
+    lon: 139.710,
     speed_kmh: 54,
   },
   {
@@ -73,22 +73,22 @@ export const DEMO_VEHICLES: VehicleScore[] = [
     fused: 0.72,
     baseline_rf: 0.58,
     compounding: true,
-    nearest_zone: "HYD-ORR-03",
+    nearest_zone: "TKY-246-08",
     severity: "warn",
     behavior: "speeding",
     alert: "cas_fcw",
     alert_score: 5.6,
     source: "cas",
-    lat: 17.4,
-    lon: 78.355,
+    lat: 35.666,
+    lon: 139.720,
     speed_kmh: 96,
   },
 ];
 
 export const DEMO_ZONES = [
-  { zone_id: "HYD-NH44-12", lat: 17.312, lon: 78.474, historical_risk: 0.82, name: "NH44 merge" },
-  { zone_id: "HYD-ORR-03", lat: 17.401, lon: 78.352, historical_risk: 0.71, name: "ORR west" },
-  { zone_id: "HYD-CBD-01", lat: 17.385, lon: 78.486, historical_risk: 0.64, name: "Central arterial" },
+  { zone_id: "TKY-C1-01", lat: 35.683, lon: 139.776, historical_risk: 0.82, name: "Shutoko C1, Edobashi" },
+  { zone_id: "TKY-246-08", lat: 35.665, lon: 139.718, historical_risk: 0.71, name: "Route 246, Aoyama" },
+  { zone_id: "TKY-K3-04", lat: 35.658, lon: 139.701, historical_risk: 0.64, name: "Shutoko K3, Shibuya" },
 ];
 
 export const DEMO_STATS = {
@@ -106,14 +106,14 @@ export const DEMO_INCIDENTS: IncidentRow[] = [
     alert: "cas_hmw",
     alert_score: 2.4,
     summary:
-      "V-1042 cas_hmw (speed-band score 2.4, session risk 0.91) in mapped corridor HYD-CBD-01. headway warning (cas_hmw) with short following distance. Live kinematics and a historical hotspot fired together. Citations: GL-HMW-02, GL-ZONE-06.",
+      "V-1042 cas_hmw (speed-band score 2.4, session risk 0.91) in mapped corridor TKY-C1-01. headway warning (cas_hmw) with short following distance. Live kinematics and a historical hotspot fired together. Citations: GL-HMW-02, GL-ZONE-06.",
     recommended_action: "Increase following distance; review the last HMW cluster on this vehicle.",
     citations: [
       { section_id: "GL-HMW-02", title: "Headway warning (cas_hmw)" },
       { section_id: "GL-ZONE-06", title: "Historical hotspots" },
     ],
-    lat: 17.386,
-    lon: 78.487,
+    lat: 35.684,
+    lon: 139.775,
   },
 ];
 

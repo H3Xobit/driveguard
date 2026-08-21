@@ -17,8 +17,8 @@ from driveguard.risk.scoring import alert_score, behavior_to_alert
 from driveguard.settings import get_settings
 
 VEHICLES = ("V-1042", "V-2218", "V-7730")
-# Approximate Hyderabad / South India corridor used as a demo map frame.
-ORIGIN = (17.385, 78.486)
+# Tokyo corridor used as the demo map frame (Marunouchi origin).
+ORIGIN = (35.6812, 139.7671)
 
 
 def _now() -> datetime:

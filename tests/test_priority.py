@@ -10,8 +10,8 @@ def test_fault_hides_info_rows() -> None:
         behavior=BehaviorTag.speeding,
         summary="fcw event",
         recommended_action="slow down",
-        lat=17.3,
-        lon=78.4,
+        lat=35.68,
+        lon=139.77,
         alert_score=4.2,
     )
     info = Incident(
@@ -21,8 +21,8 @@ def test_fault_hides_info_rows() -> None:
         behavior=BehaviorTag.calm,
         summary="quiet",
         recommended_action="none",
-        lat=17.3,
-        lon=78.4,
+        lat=35.68,
+        lon=139.77,
         alert_score=0.0,
     )
     ranked = prioritize([info, fault])

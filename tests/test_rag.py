@@ -15,9 +15,9 @@ def test_narrative_no_hallucinated_weather() -> None:
         behavior=BehaviorTag.harsh_braking,
         fused=0.81,
         severity=Severity.fault,
-        lat=17.38,
-        lon=78.48,
-        zone_name="HYD-CBD-01",
+        lat=35.68,
+        lon=139.77,
+        zone_name="TKY-C1-01",
         compounding=True,
     )
     blob = (inc.summary + inc.recommended_action).lower()

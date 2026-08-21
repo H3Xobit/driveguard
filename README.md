@@ -10,7 +10,7 @@ Site: **https://h3xobit.github.io/driveguard/**
 
 ![Fleet desk](web/public/console.png)
 
-Vehicles, CAS/DMS codes, speed-band scores, session risk, and the Hyderabad corridor map on one page. Inject `cas_hmw`, `cas_fcw`, `cas_ldw`, or `dms_distract` against a live API, or read the static snapshot on Pages.
+Vehicles, CAS/DMS codes, speed-band scores, session risk, and the Tokyo corridor map on one page. Inject `cas_hmw`, `cas_fcw`, `cas_ldw`, or `dms_distract` against a live API, or read the static snapshot on Pages.
 
 ## Overview and eval report
 
@@ -23,7 +23,7 @@ Vehicles, CAS/DMS codes, speed-band scores, session risk, and the Hyderabad corr
 1. A simulator emits telemetry in the usual iRASTE Nxt column set: Alert, Date, Time, Lat, Long, Vehicle, Speed.
 2. Each alert gets a speed-band score. Band 1 is below 40 km/h, band 2 is 40-60, band 3 is 60-80, band 4 is 80+. Speeds above 60 km/h step up. Weights follow FCW > HMW > LDW.
 3. A 32-step window is scored with an interpretable heuristic blended with a small numpy GRU, compared with a Random Forest baseline.
-4. GPS is checked against three Hyderabad-frame corridors. Live kinematics inside a hotspot is one ticket, not two.
+4. GPS is checked against three Tokyo corridors (Shutoko C1, Route 246, Shutoko K3). Live kinematics inside a hotspot is one ticket, not two.
 5. Incident notes retrieve guideline chunks only. Weather and biometrics are out of scope.
 6. CI reports accuracy, FPR, F1, a confusion matrix, and four snapshot classifiers (RF, linear SVM, logistic regression, decision tree). Those four are a baseline table, not the live path.
 

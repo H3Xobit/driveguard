@@ -1,26 +1,26 @@
 [
   {
-    "zone_id": "HYD-NH44-12",
-    "name": "NH44 merge south of Hyderabad",
-    "lat": 17.312,
-    "lon": 78.474,
-    "radius_m": 1800,
+    "zone_id": "TKY-C1-01",
+    "name": "Shutoko C1, Edobashi",
+    "lat": 35.683,
+    "lon": 139.776,
+    "radius_m": 900,
     "historical_risk": 0.82
   },
   {
-    "zone_id": "HYD-ORR-03",
-    "name": "Outer Ring Road west interchange",
-    "lat": 17.401,
-    "lon": 78.352,
-    "radius_m": 1400,
+    "zone_id": "TKY-246-08",
+    "name": "Route 246, Aoyama",
+    "lat": 35.665,
+    "lon": 139.718,
+    "radius_m": 1200,
     "historical_risk": 0.71
   },
   {
-    "zone_id": "HYD-CBD-01",
-    "name": "Central dense arterial",
-    "lat": 17.385,
-    "lon": 78.486,
-    "radius_m": 900,
+    "zone_id": "TKY-K3-04",
+    "name": "Shutoko K3, Shibuya",
+    "lat": 35.658,
+    "lon": 139.701,
+    "radius_m": 1100,
     "historical_risk": 0.64
   }
 ]

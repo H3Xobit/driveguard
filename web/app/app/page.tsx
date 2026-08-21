@@ -19,10 +19,10 @@ const INJECT = [
 ] as const;
 
 function project(lat: number, lon: number) {
-  const lat0 = 17.32;
-  const lon0 = 78.33;
-  const x = (lon - lon0) * 1800;
-  const y = (17.44 - lat) * 1800;
+  const lat0 = 35.645;
+  const lon0 = 139.685;
+  const x = (lon - lon0) * 2200;
+  const y = (35.745 - lat) * 2200;
   return { x, y };
 }
 
@@ -195,7 +195,7 @@ export default function ConsolePage() {
 
       <div className="grid gap-8 lg:grid-cols-2">
         <section>
-          <h2 className="text-sm text-zinc-200">Corridor (Hyderabad frame)</h2>
+          <h2 className="text-sm text-zinc-200">Corridor (Tokyo frame)</h2>
           <svg viewBox="0 0 280 220" className="mt-3 h-56 w-full border border-ink-line bg-ink-surface">
             {zones.map((z) => {
               const p = project(z.lat, z.lon);

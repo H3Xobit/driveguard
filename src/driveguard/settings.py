@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     dg_log_level: str = "INFO"
     dg_seed: int = 42
     dg_offline_llm: int = 1
+    dg_mqtt_consumer: int = 0
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     risk_warn: float = 0.55

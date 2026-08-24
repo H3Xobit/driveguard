@@ -1,7 +1,7 @@
 # Host ports are high so this stack does not collide with other local services.
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: postgis/postgis:16-3.4
     environment:
       POSTGRES_USER: dg
       POSTGRES_PASSWORD: dg
@@ -37,6 +37,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DG_OFFLINE_LLM: ${DG_OFFLINE_LLM:-1}
+      DG_MQTT_CONSUMER: "1"
     ports:
       - "38000:8000"
     depends_on:

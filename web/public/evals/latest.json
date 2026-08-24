@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-08-21T08:20:50.564880+00:00",
+  "timestamp": "2026-08-24T00:45:21.304678+00:00",
   "n": 10,
   "accuracy": 1.0,
   "precision": 1.0,
@@ -34,10 +34,10 @@
     },
     {
       "model": "logistic_regression",
-      "accuracy": 1.0,
-      "precision": 1.0,
+      "accuracy": 0.9583,
+      "precision": 0.95,
       "recall": 1.0,
-      "f1": 1.0
+      "f1": 0.9744
     },
     {
       "model": "decision_tree",

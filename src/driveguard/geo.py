@@ -1,4 +1,4 @@
-"""Haversine zone lookup. PostGIS can replace this when the database is in the path."""
+"""Tokyo corridor lookup. PostGIS ST_DWithin when the database is up, haversine otherwise."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from pathlib import Path
 from driveguard.models import Zone
 
 ASSETS = Path(__file__).resolve().parent / "assets"
+
+_BACKEND = "haversine"
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -28,8 +30,36 @@ def load_zones() -> list[Zone]:
     return [Zone.model_validate(z) for z in raw]
 
 
+def geo_backend() -> str:
+    return _BACKEND
+
+
+def enable_postgis() -> bool:
+    """Seed zones and switch zone_risk to ST_DWithin. Returns False when DB is offline."""
+    global _BACKEND
+    from driveguard.db import postgis_ready, seed_zones
+
+    if not postgis_ready():
+        _BACKEND = "haversine"
+        return False
+    seed_zones(load_zones())
+    _BACKEND = "postgis"
+    return True
+
+
 def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
     """Return max historical risk of any zone whose radius covers the point."""
+    if _BACKEND == "postgis":
+        try:
+            from driveguard.db import zone_hit_sql
+
+            return zone_hit_sql(lat, lon)
+        except Exception:
+            pass
+    return _zone_risk_haversine(lat, lon)
+
+
+def _zone_risk_haversine(lat: float, lon: float) -> tuple[float, str | None]:
     best = 0.0
     name: str | None = None
     for zone in load_zones():

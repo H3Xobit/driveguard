@@ -17,6 +17,7 @@ def test_meta_behaviors() -> None:
     assert body["service"] == "driveguard-api"
     assert "harsh_braking" in body["behaviors"]
     assert "cas_ldw" in body["alert_codes"]
+    assert body["geo_backend"] in {"haversine", "postgis"}
     assert body["zones"] >= 1
 
 

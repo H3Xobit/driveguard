@@ -1,4 +1,16 @@
-CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+CREATE TABLE IF NOT EXISTS accident_zones (
+    zone_id          TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    lat              DOUBLE PRECISION NOT NULL,
+    lon              DOUBLE PRECISION NOT NULL,
+    radius_m         DOUBLE PRECISION NOT NULL,
+    historical_risk  DOUBLE PRECISION NOT NULL,
+    geog             geography(Point, 4326) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS accident_zones_geog ON accident_zones USING GIST (geog);
 
 CREATE TABLE IF NOT EXISTS telemetry (
     time            TIMESTAMPTZ NOT NULL,
@@ -35,5 +47,5 @@ CREATE TABLE IF NOT EXISTS guideline_chunks (
     section_id  TEXT PRIMARY KEY,
     title       TEXT NOT NULL,
     body        TEXT NOT NULL,
-    embedding   VECTOR(384)
+    embedding   JSONB NOT NULL DEFAULT '[]'::jsonb
 );

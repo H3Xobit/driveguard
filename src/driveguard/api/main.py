@@ -12,7 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
 from driveguard import __version__
-from driveguard.geo import load_zones
+from driveguard.geo import enable_postgis, geo_backend, load_zones
+from driveguard.ingestion.consumer import start_background
 from driveguard.models import AlertCode, BehaviorTag, HealthResponse
 from driveguard.risk.scoring import ALERT_WEIGHT, SPEED_BANDS
 from driveguard.settings import get_settings
@@ -29,8 +30,16 @@ from driveguard.store import (
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    try:
+        enable_postgis()
+    except Exception:
+        pass
     seed_demo()
+    mqtt = start_background()
     yield
+    if mqtt is not None:
+        mqtt.loop_stop()
+        mqtt.disconnect()
 
 
 app = FastAPI(title="DriveGuard", version=__version__, lifespan=lifespan)
@@ -61,6 +70,8 @@ def meta() -> dict:
         "risk_warn": settings.risk_warn,
         "risk_fault": settings.risk_fault,
         "offline_llm": bool(settings.dg_offline_llm),
+        "geo_backend": geo_backend(),
+        "mqtt_consumer": bool(settings.dg_mqtt_consumer),
         "zones": len(load_zones()),
     }
 

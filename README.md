@@ -23,7 +23,7 @@ Vehicles, CAS/DMS codes, speed-band scores, session risk, and the Tokyo corridor
 1. A simulator emits telemetry in the usual iRASTE Nxt column set: Alert, Date, Time, Lat, Long, Vehicle, Speed.
 2. Each alert gets a speed-band score. Band 1 is below 40 km/h, band 2 is 40-60, band 3 is 60-80, band 4 is 80+. Speeds above 60 km/h step up. Weights follow FCW > HMW > LDW.
 3. A 32-step window is scored with an interpretable heuristic blended with a small numpy GRU, compared with a Random Forest baseline.
-4. GPS is checked against three Tokyo corridors (Shutoko C1, Route 246, Shutoko K3). Live kinematics inside a hotspot is one ticket, not two.
+4. GPS is checked against three Tokyo corridors (Shutoko C1, Route 246, Shutoko K3). Compose uses PostGIS `ST_DWithin`. Tests and the static site use haversine. Live kinematics inside a hotspot is one ticket, not two.
 5. Incident notes retrieve guideline chunks only. Weather and biometrics are out of scope.
 6. CI reports accuracy, FPR, F1, a confusion matrix, and four snapshot classifiers (RF, linear SVM, logistic regression, decision tree). Those four are a baseline table, not the live path.
 
@@ -42,7 +42,7 @@ Vehicles, CAS/DMS codes, speed-band scores, session risk, and the Tokyo corridor
 - Python 3.11, FastAPI, numpy, scikit-learn
 - Optional PyTorch LSTM (`pip install -e ".[torch]"`)
 - Next.js 14 operator UI
-- Postgres + MQTT in compose (the API still runs without them for tests)
+- PostGIS + MQTT in compose (the API still runs without them for tests)
 - GitHub Actions for unit tests, the eval gate, and Pages
 
 ## Run
@@ -70,7 +70,7 @@ Keys stay in a local `.env` that is not committed. Copy `.env.example` if you wa
 
 ## Out of scope
 
-Bulk CAS CSV ingest, PostGIS `ST_DWithin` (issue #1), a trained Temporal Fusion Transformer, biometrics, and weather.
+Bulk CAS CSV ingest, a trained Temporal Fusion Transformer, biometrics, and weather.
 
 ## License
 

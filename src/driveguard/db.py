@@ -1,4 +1,4 @@
-"""Optional Postgres helpers. Tests and showcase mode run without a live DB."""
+"""Optional Postgres helpers. Tests and the static site run without a live DB."""
 
 from __future__ import annotations
 
@@ -10,13 +10,26 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
+from driveguard.models import Zone
 from driveguard.settings import get_settings
+
+ZONE_DWITHIN_SQL = """
+SELECT zone_id, historical_risk
+FROM accident_zones
+WHERE ST_DWithin(
+    geog,
+    ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,
+    radius_m
+)
+ORDER BY historical_risk DESC
+LIMIT 1
+"""
 
 
 @contextmanager
 def connect() -> Iterator[psycopg.Connection]:
     settings = get_settings()
-    with psycopg.connect(settings.database_url, row_factory=dict_row) as conn:
+    with psycopg.connect(settings.database_url, row_factory=dict_row, connect_timeout=2) as conn:
         yield conn
 
 
@@ -27,6 +40,61 @@ def db_available() -> bool:
         return True
     except Exception:
         return False
+
+
+def postgis_ready() -> bool:
+    try:
+        with connect() as conn:
+            row = conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis')"
+            ).fetchone()
+        return bool(row and row.get("exists"))
+    except Exception:
+        return False
+
+
+def seed_zones(zones: list[Zone]) -> int:
+    if not zones:
+        return 0
+    with connect() as conn:
+        for zone in zones:
+            conn.execute(
+                """
+                INSERT INTO accident_zones (
+                    zone_id, name, lat, lon, radius_m, historical_risk, geog
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography
+                )
+                ON CONFLICT (zone_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    lat = EXCLUDED.lat,
+                    lon = EXCLUDED.lon,
+                    radius_m = EXCLUDED.radius_m,
+                    historical_risk = EXCLUDED.historical_risk,
+                    geog = EXCLUDED.geog
+                """,
+                (
+                    zone.zone_id,
+                    zone.name,
+                    zone.lat,
+                    zone.lon,
+                    zone.radius_m,
+                    zone.historical_risk,
+                    zone.lon,
+                    zone.lat,
+                ),
+            )
+        conn.commit()
+    return len(zones)
+
+
+def zone_hit_sql(lat: float, lon: float) -> tuple[float, str | None]:
+    with connect() as conn:
+        row = conn.execute(ZONE_DWITHIN_SQL, (lon, lat)).fetchone()
+    if not row:
+        return 0.0, None
+    return float(row["historical_risk"]), str(row["zone_id"])
 
 
 def insert_telemetry(conn: psycopg.Connection, sample: dict[str, Any]) -> None:

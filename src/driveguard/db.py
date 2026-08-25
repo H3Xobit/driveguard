@@ -127,6 +127,7 @@ def insert_incident(conn: psycopg.Connection, incident: dict[str, Any]) -> None:
             incident_id, vehicle_id, severity, fused_score, behavior, summary,
             contributing, recommended_action, citations, lat, lon
         ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s)
+        ON CONFLICT (incident_id) DO NOTHING
         """,
         (
             str(incident["incident_id"]),
@@ -142,3 +143,11 @@ def insert_incident(conn: psycopg.Connection, incident: dict[str, Any]) -> None:
             incident["lon"],
         ),
     )
+
+
+def persist_ingest(sample: dict[str, Any], incident: dict[str, Any] | None) -> None:
+    with connect() as conn:
+        insert_telemetry(conn, sample)
+        if incident is not None:
+            insert_incident(conn, incident)
+        conn.commit()

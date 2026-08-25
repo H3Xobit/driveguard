@@ -19,6 +19,29 @@ _TELEM: dict[str, deque[TelemetrySample]] = defaultdict(lambda: deque(maxlen=256
 _SCORES: deque[dict[str, Any]] = deque(maxlen=200)
 _INCIDENTS: deque[Incident] = deque(maxlen=80)
 _LATEST: dict[str, dict[str, Any]] = {}
+_PERSIST = False
+
+
+def set_persist(enabled: bool) -> None:
+    global _PERSIST
+    _PERSIST = enabled
+
+
+def persist_enabled() -> bool:
+    return _PERSIST
+
+
+def _maybe_persist(sample: TelemetrySample, incident: Incident | None) -> None:
+    if not _PERSIST:
+        return
+    try:
+        from driveguard.db import persist_ingest
+
+        row = sample.model_dump(mode="python")
+        row["behavior"] = sample.behavior.value
+        persist_ingest(row, incident.model_dump(mode="json") if incident else None)
+    except Exception:
+        set_persist(False)
 
 
 def ingest_sample(sample: TelemetrySample) -> dict[str, Any]:
@@ -61,7 +84,12 @@ def ingest_sample(sample: TelemetrySample) -> dict[str, Any]:
                 source=sample.source,
             )
             _INCIDENTS.appendleft(incident)
-        return {"score": scored, "incident": incident.model_dump(mode="json") if incident else None}
+        result = {
+            "score": scored,
+            "incident": incident.model_dump(mode="json") if incident else None,
+        }
+    _maybe_persist(sample, incident)
+    return result
 
 
 def inject_behavior(

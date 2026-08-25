@@ -24,8 +24,9 @@ Vehicles, CAS/DMS codes, speed-band scores, session risk, and the Tokyo corridor
 2. Each alert gets a speed-band score. Band 1 is below 40 km/h, band 2 is 40-60, band 3 is 60-80, band 4 is 80+. Speeds above 60 km/h step up. Weights follow FCW > HMW > LDW.
 3. A 32-step window is scored with an interpretable heuristic blended with a small numpy GRU, compared with a Random Forest baseline.
 4. GPS is checked against three Tokyo corridors (Shutoko C1, Route 246, Shutoko K3). Compose uses PostGIS `ST_DWithin`. Tests and the static site use haversine. Live kinematics inside a hotspot is one ticket, not two.
-5. Incident notes retrieve guideline chunks only. Weather and biometrics are out of scope.
-6. CI reports accuracy, FPR, F1, a confusion matrix, and four snapshot classifiers (RF, linear SVM, logistic regression, decision tree). Those four are a baseline table, not the live path.
+5. When Postgres is up, each ingest is written to `telemetry` and each incident to `incidents`. Memory stays the live path if the database is down.
+6. Incident notes retrieve guideline chunks only. Weather and biometrics are out of scope.
+7. CI reports accuracy, FPR, F1, a confusion matrix, and four snapshot classifiers (RF, linear SVM, logistic regression, decision tree). Those four are a baseline table, not the live path.
 
 ## Schema
 

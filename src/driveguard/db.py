@@ -151,3 +151,40 @@ def persist_ingest(sample: dict[str, Any], incident: dict[str, Any] | None) -> N
         if incident is not None:
             insert_incident(conn, incident)
         conn.commit()
+
+
+def fetch_recent_telemetry(per_vehicle: int = 32) -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT time, vehicle_id, speed_kmh, accel_ms2, brake, steering_var,
+                   lat, lon, heading_deg, behavior
+            FROM (
+                SELECT time, vehicle_id, speed_kmh, accel_ms2, brake, steering_var,
+                       lat, lon, heading_deg, behavior,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY vehicle_id ORDER BY time DESC
+                       ) AS rn
+                FROM telemetry
+            ) ranked
+            WHERE rn <= %s
+            ORDER BY vehicle_id, time ASC
+            """,
+            (per_vehicle,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_recent_incidents(limit: int = 80) -> list[dict[str, Any]]:
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT incident_id, vehicle_id, severity, fused_score, behavior, summary,
+                   contributing, recommended_action, citations, lat, lon, created_at
+            FROM incidents
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]

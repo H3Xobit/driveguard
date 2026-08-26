@@ -21,10 +21,12 @@ from driveguard.settings import get_settings
 from driveguard.store import (
     alert_mix,
     get_incident,
+    hydrate_from_db,
     inject_behavior,
     list_incidents,
     list_scores,
     persist_enabled,
+    restored_from_db,
     seed_demo,
     set_persist,
     vehicles_snapshot,
@@ -41,7 +43,8 @@ async def lifespan(_app: FastAPI):
         set_persist(db_available())
     except Exception:
         set_persist(False)
-    seed_demo()
+    if not hydrate_from_db():
+        seed_demo()
     mqtt = start_background()
     yield
     if mqtt is not None:
@@ -80,6 +83,7 @@ def meta() -> dict:
         "geo_backend": geo_backend(),
         "mqtt_consumer": bool(settings.dg_mqtt_consumer),
         "persist": persist_enabled(),
+        "restored": restored_from_db(),
         "zones": len(load_zones()),
     }
 

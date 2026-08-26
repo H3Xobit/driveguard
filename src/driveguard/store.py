@@ -20,6 +20,7 @@ _SCORES: deque[dict[str, Any]] = deque(maxlen=200)
 _INCIDENTS: deque[Incident] = deque(maxlen=80)
 _LATEST: dict[str, dict[str, Any]] = {}
 _PERSIST = False
+_RESTORED = False
 
 
 def set_persist(enabled: bool) -> None:
@@ -29,6 +30,25 @@ def set_persist(enabled: bool) -> None:
 
 def persist_enabled() -> bool:
     return _PERSIST
+
+
+def restored_from_db() -> bool:
+    return _RESTORED
+
+
+def reset_store() -> None:
+    global _RESTORED
+    with _LOCK:
+        _TELEM.clear()
+        _SCORES.clear()
+        _INCIDENTS.clear()
+        _LATEST.clear()
+    _RESTORED = False
+
+
+def has_desk_state() -> bool:
+    with _LOCK:
+        return bool(_LATEST or _INCIDENTS)
 
 
 def _maybe_persist(sample: TelemetrySample, incident: Incident | None) -> None:
@@ -44,46 +64,53 @@ def _maybe_persist(sample: TelemetrySample, incident: Incident | None) -> None:
         set_persist(False)
 
 
-def ingest_sample(sample: TelemetrySample) -> dict[str, Any]:
+def _score_into_buffers(
+    sample: TelemetrySample, *, emit_incident: bool
+) -> tuple[dict[str, Any], Incident | None]:
     settings = get_settings()
     zone, zone_id = zone_risk(sample.lat, sample.lon)
+    buf = _TELEM[sample.vehicle_id]
+    buf.append(sample)
+    samples = list(buf)
+    zones = [zone_risk(s.lat, s.lon)[0] for s in samples]
+    scored = score_window(samples, zones)
+    scored["vehicle_id"] = sample.vehicle_id
+    scored["behavior"] = sample.behavior.value
+    scored["lat"] = sample.lat
+    scored["lon"] = sample.lon
+    scored["speed_kmh"] = sample.speed_kmh
+    scored["nearest_zone"] = zone_id
+    scored["zone"] = zone
+    scored["alert"] = sample.alert.value
+    scored["alert_score"] = sample.alert_score
+    scored["source"] = sample.source.value
+    fused = scored["fused"]
+    if isinstance(fused, float) and zone >= 0.55 and float(scored["temporal"]) >= 0.55:
+        scored["compounding"] = True
+    _SCORES.appendleft(scored)
+    _LATEST[sample.vehicle_id] = scored
+    incident = None
+    if emit_incident and float(scored["fused"]) >= settings.risk_warn:
+        incident = narrate_incident(
+            vehicle_id=sample.vehicle_id,
+            behavior=sample.behavior,
+            fused=float(scored["fused"]),
+            severity=Severity(scored["severity"]),
+            lat=sample.lat,
+            lon=sample.lon,
+            zone_name=zone_id,
+            compounding=bool(scored["compounding"]),
+            alert=sample.alert,
+            alert_score_value=sample.alert_score,
+            source=sample.source,
+        )
+        _INCIDENTS.appendleft(incident)
+    return scored, incident
+
+
+def ingest_sample(sample: TelemetrySample) -> dict[str, Any]:
     with _LOCK:
-        buf = _TELEM[sample.vehicle_id]
-        buf.append(sample)
-        samples = list(buf)
-        zones = [zone_risk(s.lat, s.lon)[0] for s in samples]
-        scored = score_window(samples, zones)
-        scored["vehicle_id"] = sample.vehicle_id
-        scored["behavior"] = sample.behavior.value
-        scored["lat"] = sample.lat
-        scored["lon"] = sample.lon
-        scored["speed_kmh"] = sample.speed_kmh
-        scored["nearest_zone"] = zone_id
-        scored["zone"] = zone
-        scored["alert"] = sample.alert.value
-        scored["alert_score"] = sample.alert_score
-        scored["source"] = sample.source.value
-        fused = scored["fused"]
-        if isinstance(fused, float) and zone >= 0.55 and float(scored["temporal"]) >= 0.55:
-            scored["compounding"] = True
-        _SCORES.appendleft(scored)
-        _LATEST[sample.vehicle_id] = scored
-        incident = None
-        if float(scored["fused"]) >= settings.risk_warn:
-            incident = narrate_incident(
-                vehicle_id=sample.vehicle_id,
-                behavior=sample.behavior,
-                fused=float(scored["fused"]),
-                severity=Severity(scored["severity"]),
-                lat=sample.lat,
-                lon=sample.lon,
-                zone_name=zone_id,
-                compounding=bool(scored["compounding"]),
-                alert=sample.alert,
-                alert_score_value=sample.alert_score,
-                source=sample.source,
-            )
-            _INCIDENTS.appendleft(incident)
+        scored, incident = _score_into_buffers(sample, emit_incident=True)
         result = {
             "score": scored,
             "incident": incident.model_dump(mode="json") if incident else None,
@@ -149,7 +176,86 @@ def vehicles_snapshot() -> list[dict[str, Any]]:
 
 
 def seed_demo() -> None:
-    if _LATEST:
+    if has_desk_state():
         return
     inject_behavior("calm", vehicle_id="V-2218", duration=20)
     inject_behavior("harsh_braking", vehicle_id="V-1042", duration=28)
+
+
+def _sample_from_row(row: dict[str, Any]) -> TelemetrySample | None:
+    try:
+        return TelemetrySample(
+            time=row["time"],
+            vehicle_id=row["vehicle_id"],
+            speed_kmh=float(row["speed_kmh"]),
+            accel_ms2=float(row["accel_ms2"]),
+            brake=float(row["brake"]),
+            steering_var=float(row["steering_var"]),
+            lat=float(row["lat"]),
+            lon=float(row["lon"]),
+            heading_deg=float(row["heading_deg"]),
+            behavior=row["behavior"],
+        )
+    except Exception:
+        return None
+
+
+def _incident_from_row(row: dict[str, Any]) -> Incident | None:
+    try:
+        return Incident(
+            incident_id=row["incident_id"],
+            vehicle_id=row["vehicle_id"],
+            severity=row["severity"],
+            fused_score=float(row["fused_score"]),
+            behavior=row["behavior"],
+            summary=row["summary"],
+            contributing=list(row.get("contributing") or []),
+            recommended_action=row["recommended_action"],
+            citations=list(row.get("citations") or []),
+            lat=float(row["lat"]),
+            lon=float(row["lon"]),
+            created_at=row.get("created_at"),
+        )
+    except Exception:
+        return None
+
+
+def hydrate_from_db() -> bool:
+    """Fill in-process buffers from Postgres. No-op when persist is off or tables are empty."""
+    global _RESTORED
+    if not _PERSIST:
+        _RESTORED = False
+        return False
+    try:
+        from driveguard.db import fetch_recent_incidents, fetch_recent_telemetry
+
+        rows = fetch_recent_telemetry()
+        incident_rows = fetch_recent_incidents()
+    except Exception:
+        set_persist(False)
+        _RESTORED = False
+        return False
+    samples: list[TelemetrySample] = []
+    for row in rows:
+        sample = _sample_from_row(row)
+        if sample is not None:
+            samples.append(sample)
+    incidents: list[Incident] = []
+    for row in incident_rows:
+        incident = _incident_from_row(row)
+        if incident is not None:
+            incidents.append(incident)
+    if not samples and not incidents:
+        _RESTORED = False
+        return False
+    with _LOCK:
+        _TELEM.clear()
+        _SCORES.clear()
+        _INCIDENTS.clear()
+        _LATEST.clear()
+        for sample in samples:
+            _score_into_buffers(sample, emit_incident=False)
+        for incident in reversed(incidents):
+            _INCIDENTS.appendleft(incident)
+    _RESTORED = True
+    return True

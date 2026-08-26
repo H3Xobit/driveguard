@@ -19,6 +19,7 @@ def test_meta_behaviors() -> None:
     assert "cas_ldw" in body["alert_codes"]
     assert body["geo_backend"] in {"haversine", "postgis"}
     assert "persist" in body
+    assert "restored" in body
     assert body["zones"] >= 1
 
 

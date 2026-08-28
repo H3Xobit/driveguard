@@ -97,13 +97,28 @@ def zone_hit_sql(lat: float, lon: float) -> tuple[float, str | None]:
     return float(row["historical_risk"]), str(row["zone_id"])
 
 
+def ensure_telemetry_alert_columns(conn: psycopg.Connection) -> None:
+    conn.execute(
+        "ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS alert TEXT NOT NULL DEFAULT 'none'"
+    )
+    conn.execute(
+        "ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'cas'"
+    )
+    conn.execute(
+        """
+        ALTER TABLE telemetry
+        ADD COLUMN IF NOT EXISTS alert_score DOUBLE PRECISION NOT NULL DEFAULT 0
+        """
+    )
+
+
 def insert_telemetry(conn: psycopg.Connection, sample: dict[str, Any]) -> None:
     conn.execute(
         """
         INSERT INTO telemetry (
             time, vehicle_id, speed_kmh, accel_ms2, brake, steering_var,
-            lat, lon, heading_deg, behavior
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            lat, lon, heading_deg, behavior, alert, source, alert_score
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             sample["time"],
@@ -116,6 +131,9 @@ def insert_telemetry(conn: psycopg.Connection, sample: dict[str, Any]) -> None:
             sample["lon"],
             sample["heading_deg"],
             sample["behavior"],
+            sample.get("alert") or "none",
+            sample.get("source") or "cas",
+            float(sample.get("alert_score") or 0.0),
         ),
     )
 
@@ -147,6 +165,7 @@ def insert_incident(conn: psycopg.Connection, incident: dict[str, Any]) -> None:
 
 def persist_ingest(sample: dict[str, Any], incident: dict[str, Any] | None) -> None:
     with connect() as conn:
+        ensure_telemetry_alert_columns(conn)
         insert_telemetry(conn, sample)
         if incident is not None:
             insert_incident(conn, incident)
@@ -155,13 +174,15 @@ def persist_ingest(sample: dict[str, Any], incident: dict[str, Any] | None) -> N
 
 def fetch_recent_telemetry(per_vehicle: int = 32) -> list[dict[str, Any]]:
     with connect() as conn:
+        ensure_telemetry_alert_columns(conn)
+        conn.commit()
         rows = conn.execute(
             """
             SELECT time, vehicle_id, speed_kmh, accel_ms2, brake, steering_var,
-                   lat, lon, heading_deg, behavior
+                   lat, lon, heading_deg, behavior, alert, source, alert_score
             FROM (
                 SELECT time, vehicle_id, speed_kmh, accel_ms2, brake, steering_var,
-                       lat, lon, heading_deg, behavior,
+                       lat, lon, heading_deg, behavior, alert, source, alert_score,
                        ROW_NUMBER() OVER (
                            PARTITION BY vehicle_id ORDER BY time DESC
                        ) AS rn

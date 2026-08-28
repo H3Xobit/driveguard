@@ -9,7 +9,7 @@ from uuid import UUID
 
 from driveguard.geo import zone_risk
 from driveguard.llm.narrative import narrate_incident
-from driveguard.models import BehaviorTag, Incident, Severity, TelemetrySample
+from driveguard.models import AlertCode, BehaviorTag, Incident, Severity, StreamSource, TelemetrySample
 from driveguard.risk.priority import prioritize
 from driveguard.risk.temporal import score_window
 from driveguard.settings import get_settings
@@ -59,6 +59,8 @@ def _maybe_persist(sample: TelemetrySample, incident: Incident | None) -> None:
 
         row = sample.model_dump(mode="python")
         row["behavior"] = sample.behavior.value
+        row["alert"] = sample.alert.value
+        row["source"] = sample.source.value
         persist_ingest(row, incident.model_dump(mode="json") if incident else None)
     except Exception:
         set_persist(False)
@@ -195,6 +197,9 @@ def _sample_from_row(row: dict[str, Any]) -> TelemetrySample | None:
             lon=float(row["lon"]),
             heading_deg=float(row["heading_deg"]),
             behavior=row["behavior"],
+            alert=row.get("alert") or AlertCode.none,
+            source=row.get("source") or StreamSource.cas,
+            alert_score=float(row.get("alert_score") or 0.0),
         )
     except Exception:
         return None

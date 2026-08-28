@@ -22,7 +22,10 @@ CREATE TABLE IF NOT EXISTS telemetry (
     lat             DOUBLE PRECISION NOT NULL,
     lon             DOUBLE PRECISION NOT NULL,
     heading_deg     DOUBLE PRECISION NOT NULL,
-    behavior        TEXT NOT NULL
+    behavior        TEXT NOT NULL,
+    alert           TEXT NOT NULL DEFAULT 'none',
+    source          TEXT NOT NULL DEFAULT 'cas',
+    alert_score     DOUBLE PRECISION NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS telemetry_vehicle_time ON telemetry (vehicle_id, time DESC);

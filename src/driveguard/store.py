@@ -220,6 +220,9 @@ def _incident_from_row(row: dict[str, Any]) -> Incident | None:
             lat=float(row["lat"]),
             lon=float(row["lon"]),
             created_at=row.get("created_at"),
+            alert=row.get("alert") or AlertCode.none,
+            source=row.get("source") or StreamSource.cas,
+            alert_score=float(row.get("alert_score") or 0.0),
         )
     except Exception:
         return None

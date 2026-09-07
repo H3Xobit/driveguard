@@ -73,6 +73,9 @@ def test_hydrate_loads_vehicles_and_skips_seed(monkeypatch) -> None:
                 "lat": 35.6812,
                 "lon": 139.7671,
                 "created_at": now,
+                "alert": "cas_hmw",
+                "source": "cas",
+                "alert_score": 2.4,
             }
         ],
     )
@@ -82,7 +85,11 @@ def test_hydrate_loads_vehicles_and_skips_seed(monkeypatch) -> None:
     assert restored["alert"] == "cas_hmw"
     assert restored["source"] == "cas"
     assert restored["alert_score"] == 2.4
-    assert list_incidents()[0].vehicle_id == "V-9001"
+    incident = list_incidents()[0]
+    assert incident.vehicle_id == "V-9001"
+    assert incident.alert.value == "cas_hmw"
+    assert incident.source.value == "cas"
+    assert incident.alert_score == 2.4
     seed_demo()
     ids = {row["vehicle_id"] for row in vehicles_snapshot()}
     assert "V-9001" in ids

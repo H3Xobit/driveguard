@@ -39,3 +39,36 @@ def test_insert_telemetry_includes_alert_columns() -> None:
     )
     assert "alert, source, alert_score" in captured["sql"]
     assert captured["params"][-3:] == ("cas_hmw", "cas", 2.4)
+
+
+def test_insert_incident_includes_alert_columns() -> None:
+    from driveguard.db import insert_incident
+
+    captured: dict = {}
+
+    class FakeConn:
+        def execute(self, sql, params=None):
+            captured["sql"] = sql
+            captured["params"] = params
+
+    insert_incident(
+        FakeConn(),  # type: ignore[arg-type]
+        {
+            "incident_id": "11111111-1111-1111-1111-111111111111",
+            "vehicle_id": "V-1042",
+            "severity": "warn",
+            "fused_score": 0.71,
+            "behavior": "harsh_braking",
+            "summary": "Headway warning on the C1 corridor.",
+            "contributing": ["cas_hmw"],
+            "recommended_action": "Ease speed through the hotspot.",
+            "citations": [{"section_id": "cas-hmw"}],
+            "lat": 35.68,
+            "lon": 139.76,
+            "alert": "cas_hmw",
+            "source": "cas",
+            "alert_score": 2.4,
+        },
+    )
+    assert "alert, source, alert_score" in captured["sql"]
+    assert captured["params"][-3:] == ("cas_hmw", "cas", 2.4)

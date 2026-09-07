@@ -43,7 +43,10 @@ CREATE TABLE IF NOT EXISTS incidents (
     recommended_action  TEXT NOT NULL,
     citations           JSONB NOT NULL DEFAULT '[]'::jsonb,
     lat                 DOUBLE PRECISION NOT NULL,
-    lon                 DOUBLE PRECISION NOT NULL
+    lon                 DOUBLE PRECISION NOT NULL,
+    alert               TEXT NOT NULL DEFAULT 'none',
+    source              TEXT NOT NULL DEFAULT 'cas',
+    alert_score         DOUBLE PRECISION NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS guideline_chunks (

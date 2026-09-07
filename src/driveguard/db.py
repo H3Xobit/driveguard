@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from typing import Any
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import dict_row
 
 from driveguard.models import Zone
@@ -97,19 +98,33 @@ def zone_hit_sql(lat: float, lon: float) -> tuple[float, str | None]:
     return float(row["historical_risk"]), str(row["zone_id"])
 
 
+def _ensure_alert_columns(conn: psycopg.Connection, table: str) -> None:
+    if table not in {"telemetry", "incidents"}:
+        raise ValueError(table)
+    ident = sql.Identifier(table)
+    conn.execute(
+        sql.SQL(
+            "ALTER TABLE {} ADD COLUMN IF NOT EXISTS alert TEXT NOT NULL DEFAULT 'none'"
+        ).format(ident)
+    )
+    conn.execute(
+        sql.SQL(
+            "ALTER TABLE {} ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'cas'"
+        ).format(ident)
+    )
+    conn.execute(
+        sql.SQL(
+            "ALTER TABLE {} ADD COLUMN IF NOT EXISTS alert_score DOUBLE PRECISION NOT NULL DEFAULT 0"
+        ).format(ident)
+    )
+
+
 def ensure_telemetry_alert_columns(conn: psycopg.Connection) -> None:
-    conn.execute(
-        "ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS alert TEXT NOT NULL DEFAULT 'none'"
-    )
-    conn.execute(
-        "ALTER TABLE telemetry ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'cas'"
-    )
-    conn.execute(
-        """
-        ALTER TABLE telemetry
-        ADD COLUMN IF NOT EXISTS alert_score DOUBLE PRECISION NOT NULL DEFAULT 0
-        """
-    )
+    _ensure_alert_columns(conn, "telemetry")
+
+
+def ensure_incident_alert_columns(conn: psycopg.Connection) -> None:
+    _ensure_alert_columns(conn, "incidents")
 
 
 def insert_telemetry(conn: psycopg.Connection, sample: dict[str, Any]) -> None:
@@ -143,8 +158,9 @@ def insert_incident(conn: psycopg.Connection, incident: dict[str, Any]) -> None:
         """
         INSERT INTO incidents (
             incident_id, vehicle_id, severity, fused_score, behavior, summary,
-            contributing, recommended_action, citations, lat, lon
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s)
+            contributing, recommended_action, citations, lat, lon,
+            alert, source, alert_score
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, %s, %s, %s)
         ON CONFLICT (incident_id) DO NOTHING
         """,
         (
@@ -159,6 +175,9 @@ def insert_incident(conn: psycopg.Connection, incident: dict[str, Any]) -> None:
             json.dumps(incident.get("citations") or []),
             incident["lat"],
             incident["lon"],
+            incident.get("alert") or "none",
+            incident.get("source") or "cas",
+            float(incident.get("alert_score") or 0.0),
         ),
     )
 
@@ -166,6 +185,7 @@ def insert_incident(conn: psycopg.Connection, incident: dict[str, Any]) -> None:
 def persist_ingest(sample: dict[str, Any], incident: dict[str, Any] | None) -> None:
     with connect() as conn:
         ensure_telemetry_alert_columns(conn)
+        ensure_incident_alert_columns(conn)
         insert_telemetry(conn, sample)
         if incident is not None:
             insert_incident(conn, incident)
@@ -198,10 +218,13 @@ def fetch_recent_telemetry(per_vehicle: int = 32) -> list[dict[str, Any]]:
 
 def fetch_recent_incidents(limit: int = 80) -> list[dict[str, Any]]:
     with connect() as conn:
+        ensure_incident_alert_columns(conn)
+        conn.commit()
         rows = conn.execute(
             """
             SELECT incident_id, vehicle_id, severity, fused_score, behavior, summary,
-                   contributing, recommended_action, citations, lat, lon, created_at
+                   contributing, recommended_action, citations, lat, lon, created_at,
+                   alert, source, alert_score
             FROM incidents
             ORDER BY created_at DESC
             LIMIT %s

@@ -127,6 +127,20 @@ def ensure_incident_alert_columns(conn: psycopg.Connection) -> None:
     _ensure_alert_columns(conn, "incidents")
 
 
+INCIDENT_CREATED_AT_INDEX_SQL = (
+    "CREATE INDEX IF NOT EXISTS incidents_created_at ON incidents (created_at DESC)"
+)
+
+
+def ensure_incident_created_at_index(conn: psycopg.Connection) -> None:
+    conn.execute(INCIDENT_CREATED_AT_INDEX_SQL)
+
+
+def ensure_incident_schema(conn: psycopg.Connection) -> None:
+    ensure_incident_alert_columns(conn)
+    ensure_incident_created_at_index(conn)
+
+
 def insert_telemetry(conn: psycopg.Connection, sample: dict[str, Any]) -> None:
     conn.execute(
         """
@@ -185,7 +199,7 @@ def insert_incident(conn: psycopg.Connection, incident: dict[str, Any]) -> None:
 def persist_ingest(sample: dict[str, Any], incident: dict[str, Any] | None) -> None:
     with connect() as conn:
         ensure_telemetry_alert_columns(conn)
-        ensure_incident_alert_columns(conn)
+        ensure_incident_schema(conn)
         insert_telemetry(conn, sample)
         if incident is not None:
             insert_incident(conn, incident)
@@ -218,7 +232,7 @@ def fetch_recent_telemetry(per_vehicle: int = 32) -> list[dict[str, Any]]:
 
 def fetch_recent_incidents(limit: int = 80) -> list[dict[str, Any]]:
     with connect() as conn:
-        ensure_incident_alert_columns(conn)
+        ensure_incident_schema(conn)
         conn.commit()
         rows = conn.execute(
             """

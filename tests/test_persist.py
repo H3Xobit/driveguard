@@ -72,3 +72,18 @@ def test_insert_incident_includes_alert_columns() -> None:
     )
     assert "alert, source, alert_score" in captured["sql"]
     assert captured["params"][-3:] == ("cas_hmw", "cas", 2.4)
+
+
+def test_ensure_incident_created_at_index_sql() -> None:
+    from driveguard.db import INCIDENT_CREATED_AT_INDEX_SQL, ensure_incident_created_at_index
+
+    captured: dict = {}
+
+    class FakeConn:
+        def execute(self, sql, params=None):
+            captured["sql"] = sql
+
+    ensure_incident_created_at_index(FakeConn())  # type: ignore[arg-type]
+    assert captured["sql"] == INCIDENT_CREATED_AT_INDEX_SQL
+    assert "incidents_created_at" in captured["sql"]
+    assert "created_at DESC" in captured["sql"]

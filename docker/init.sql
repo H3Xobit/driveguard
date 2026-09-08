@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS incidents (
     alert_score         DOUBLE PRECISION NOT NULL DEFAULT 0
 );
 
+CREATE INDEX IF NOT EXISTS incidents_created_at ON incidents (created_at DESC);
+
 CREATE TABLE IF NOT EXISTS guideline_chunks (
     section_id  TEXT PRIMARY KEY,
     title       TEXT NOT NULL,

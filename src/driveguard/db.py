@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from threading import Lock
 from typing import Any
 
 import psycopg
@@ -141,6 +142,30 @@ def ensure_incident_schema(conn: psycopg.Connection) -> None:
     ensure_incident_created_at_index(conn)
 
 
+_RUNTIME_SCHEMA_READY = False
+_RUNTIME_SCHEMA_LOCK = Lock()
+
+
+def reset_runtime_schema() -> None:
+    """Test helper. Production callers never need this."""
+    global _RUNTIME_SCHEMA_READY
+    with _RUNTIME_SCHEMA_LOCK:
+        _RUNTIME_SCHEMA_READY = False
+
+
+def ensure_runtime_schema(conn: psycopg.Connection) -> None:
+    """Apply telemetry and incident DDL once per process, after the first success."""
+    global _RUNTIME_SCHEMA_READY
+    if _RUNTIME_SCHEMA_READY:
+        return
+    with _RUNTIME_SCHEMA_LOCK:
+        if _RUNTIME_SCHEMA_READY:
+            return
+        ensure_telemetry_alert_columns(conn)
+        ensure_incident_schema(conn)
+        _RUNTIME_SCHEMA_READY = True
+
+
 def insert_telemetry(conn: psycopg.Connection, sample: dict[str, Any]) -> None:
     conn.execute(
         """
@@ -198,8 +223,7 @@ def insert_incident(conn: psycopg.Connection, incident: dict[str, Any]) -> None:
 
 def persist_ingest(sample: dict[str, Any], incident: dict[str, Any] | None) -> None:
     with connect() as conn:
-        ensure_telemetry_alert_columns(conn)
-        ensure_incident_schema(conn)
+        ensure_runtime_schema(conn)
         insert_telemetry(conn, sample)
         if incident is not None:
             insert_incident(conn, incident)
@@ -208,7 +232,7 @@ def persist_ingest(sample: dict[str, Any], incident: dict[str, Any] | None) -> N
 
 def fetch_recent_telemetry(per_vehicle: int = 32) -> list[dict[str, Any]]:
     with connect() as conn:
-        ensure_telemetry_alert_columns(conn)
+        ensure_runtime_schema(conn)
         conn.commit()
         rows = conn.execute(
             """
@@ -232,7 +256,7 @@ def fetch_recent_telemetry(per_vehicle: int = 32) -> list[dict[str, Any]]:
 
 def fetch_recent_incidents(limit: int = 80) -> list[dict[str, Any]]:
     with connect() as conn:
-        ensure_incident_schema(conn)
+        ensure_runtime_schema(conn)
         conn.commit()
         rows = conn.execute(
             """

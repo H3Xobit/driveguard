@@ -142,3 +142,31 @@ def test_second_persist_ingest_skips_schema_sql(monkeypatch: pytest.MonkeyPatch)
     assert not any("CREATE INDEX" in item for item in sqls)
     assert not any("ALTER TABLE" in item for item in sqls)
     assert any("INSERT INTO telemetry" in item for item in sqls)
+
+
+def test_fetch_recent_desk_rows_uses_one_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    from driveguard.db import fetch_recent_desk_rows
+
+    connects = {"n": 0}
+
+    class Result:
+        def fetchall(self) -> list:
+            return []
+
+    class FakeConn:
+        def execute(self, statement, params=None):
+            return Result()
+
+        def commit(self) -> None:
+            return None
+
+    @contextmanager
+    def fake_connect():
+        connects["n"] += 1
+        yield FakeConn()
+
+    monkeypatch.setattr("driveguard.db.connect", fake_connect)
+    telemetry, incidents = fetch_recent_desk_rows()
+    assert connects["n"] == 1
+    assert telemetry == []
+    assert incidents == []

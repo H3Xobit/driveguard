@@ -230,43 +230,53 @@ def persist_ingest(sample: dict[str, Any], incident: dict[str, Any] | None) -> N
         conn.commit()
 
 
-def fetch_recent_telemetry(per_vehicle: int = 32) -> list[dict[str, Any]]:
-    with connect() as conn:
-        ensure_runtime_schema(conn)
-        conn.commit()
-        rows = conn.execute(
-            """
+def fetch_recent_telemetry(
+    conn: psycopg.Connection, per_vehicle: int = 32
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT time, vehicle_id, speed_kmh, accel_ms2, brake, steering_var,
+               lat, lon, heading_deg, behavior, alert, source, alert_score
+        FROM (
             SELECT time, vehicle_id, speed_kmh, accel_ms2, brake, steering_var,
-                   lat, lon, heading_deg, behavior, alert, source, alert_score
-            FROM (
-                SELECT time, vehicle_id, speed_kmh, accel_ms2, brake, steering_var,
-                       lat, lon, heading_deg, behavior, alert, source, alert_score,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY vehicle_id ORDER BY time DESC
-                       ) AS rn
-                FROM telemetry
-            ) ranked
-            WHERE rn <= %s
-            ORDER BY vehicle_id, time ASC
-            """,
-            (per_vehicle,),
-        ).fetchall()
+                   lat, lon, heading_deg, behavior, alert, source, alert_score,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY vehicle_id ORDER BY time DESC
+                   ) AS rn
+            FROM telemetry
+        ) ranked
+        WHERE rn <= %s
+        ORDER BY vehicle_id, time ASC
+        """,
+        (per_vehicle,),
+    ).fetchall()
     return [dict(row) for row in rows]
 
 
-def fetch_recent_incidents(limit: int = 80) -> list[dict[str, Any]]:
+def fetch_recent_incidents(
+    conn: psycopg.Connection, limit: int = 80
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT incident_id, vehicle_id, severity, fused_score, behavior, summary,
+               contributing, recommended_action, citations, lat, lon, created_at,
+               alert, source, alert_score
+        FROM incidents
+        ORDER BY created_at DESC
+        LIMIT %s
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def fetch_recent_desk_rows(
+    per_vehicle: int = 32, limit: int = 80
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Load recent telemetry and incidents on one connection."""
     with connect() as conn:
         ensure_runtime_schema(conn)
         conn.commit()
-        rows = conn.execute(
-            """
-            SELECT incident_id, vehicle_id, severity, fused_score, behavior, summary,
-                   contributing, recommended_action, citations, lat, lon, created_at,
-                   alert, source, alert_score
-            FROM incidents
-            ORDER BY created_at DESC
-            LIMIT %s
-            """,
-            (limit,),
-        ).fetchall()
-    return [dict(row) for row in rows]
+        telemetry = fetch_recent_telemetry(conn, per_vehicle=per_vehicle)
+        incidents = fetch_recent_incidents(conn, limit=limit)
+        return telemetry, incidents

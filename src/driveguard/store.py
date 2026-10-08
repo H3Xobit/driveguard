@@ -235,10 +235,9 @@ def hydrate_from_db() -> bool:
         _RESTORED = False
         return False
     try:
-        from driveguard.db import fetch_recent_incidents, fetch_recent_telemetry
+        from driveguard.db import fetch_recent_desk_rows
 
-        rows = fetch_recent_telemetry()
-        incident_rows = fetch_recent_incidents()
+        rows, incident_rows = fetch_recent_desk_rows()
     except Exception:
         set_persist(False)
         _RESTORED = False

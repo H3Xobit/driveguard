@@ -109,6 +109,37 @@ def test_hydrate_empty_tables_keep_seed_path(monkeypatch) -> None:
     assert "V-1042" in ids
 
 
+def test_hydrate_probe_enables_persist_without_prior_flag(monkeypatch) -> None:
+    set_persist(False)
+    now = datetime.now(UTC)
+    monkeypatch.setattr(
+        "driveguard.db.fetch_recent_desk_rows",
+        lambda per_vehicle=32, limit=80: (
+            [
+                {
+                    "time": now,
+                    "vehicle_id": "V-9001",
+                    "speed_kmh": 62.0,
+                    "accel_ms2": 0.4,
+                    "brake": 0.1,
+                    "steering_var": 1.2,
+                    "lat": 35.6812,
+                    "lon": 139.7671,
+                    "heading_deg": 90.0,
+                    "behavior": BehaviorTag.calm.value,
+                    "alert": "cas_hmw",
+                    "source": "cas",
+                    "alert_score": 2.4,
+                }
+            ],
+            [],
+        ),
+    )
+    assert hydrate_from_db(probe=True) is True
+    assert persist_enabled() is True
+    assert restored_from_db() is True
+
+
 def test_hydrate_db_error_disables_persist(monkeypatch) -> None:
     set_persist(True)
 

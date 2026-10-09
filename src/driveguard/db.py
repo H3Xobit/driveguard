@@ -273,8 +273,9 @@ def fetch_recent_incidents(
 def fetch_recent_desk_rows(
     per_vehicle: int = 32, limit: int = 80
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Load recent telemetry and incidents on one connection."""
+    """Probe Postgres, then load recent telemetry and incidents on that connection."""
     with connect() as conn:
+        conn.execute("SELECT 1")
         ensure_runtime_schema(conn)
         conn.commit()
         telemetry = fetch_recent_telemetry(conn, per_vehicle=per_vehicle)

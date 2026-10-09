@@ -12,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
 from driveguard import __version__
-from driveguard.db import db_available
 from driveguard.geo import enable_postgis, geo_backend, load_zones
 from driveguard.ingestion.consumer import start_background
 from driveguard.models import AlertCode, BehaviorTag, HealthResponse
@@ -28,7 +27,6 @@ from driveguard.store import (
     persist_enabled,
     restored_from_db,
     seed_demo,
-    set_persist,
     vehicles_snapshot,
 )
 
@@ -39,11 +37,7 @@ async def lifespan(_app: FastAPI):
         enable_postgis()
     except Exception:
         pass
-    try:
-        set_persist(db_available())
-    except Exception:
-        set_persist(False)
-    if not hydrate_from_db():
+    if not hydrate_from_db(probe=True):
         seed_demo()
     mqtt = start_background()
     yield

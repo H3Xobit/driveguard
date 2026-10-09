@@ -228,10 +228,14 @@ def _incident_from_row(row: dict[str, Any]) -> Incident | None:
         return None
 
 
-def hydrate_from_db() -> bool:
-    """Fill in-process buffers from Postgres. No-op when persist is off or tables are empty."""
+def hydrate_from_db(*, probe: bool = False) -> bool:
+    """Fill in-process buffers from Postgres.
+
+    When persist is off this is a no-op, unless ``probe`` is True (API start).
+    Probe uses the same connection as the recent queries to decide persist.
+    """
     global _RESTORED
-    if not _PERSIST:
+    if not probe and not _PERSIST:
         _RESTORED = False
         return False
     try:
@@ -242,6 +246,8 @@ def hydrate_from_db() -> bool:
         set_persist(False)
         _RESTORED = False
         return False
+    if probe:
+        set_persist(True)
     samples: list[TelemetrySample] = []
     for row in rows:
         sample = _sample_from_row(row)

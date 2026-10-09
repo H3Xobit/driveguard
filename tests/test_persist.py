@@ -153,8 +153,11 @@ def test_fetch_recent_desk_rows_uses_one_connection(monkeypatch: pytest.MonkeyPa
         def fetchall(self) -> list:
             return []
 
+    sqls: list[str] = []
+
     class FakeConn:
         def execute(self, statement, params=None):
+            sqls.append(str(statement))
             return Result()
 
         def commit(self) -> None:
@@ -168,5 +171,6 @@ def test_fetch_recent_desk_rows_uses_one_connection(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("driveguard.db.connect", fake_connect)
     telemetry, incidents = fetch_recent_desk_rows()
     assert connects["n"] == 1
+    assert sqls and "SELECT 1" in str(sqls[0])
     assert telemetry == []
     assert incidents == []

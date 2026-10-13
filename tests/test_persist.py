@@ -174,3 +174,52 @@ def test_fetch_recent_desk_rows_uses_one_connection(monkeypatch: pytest.MonkeyPa
     assert sqls and "SELECT 1" in str(sqls[0])
     assert telemetry == []
     assert incidents == []
+
+
+def test_load_startup_uses_one_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    from driveguard.db import load_startup
+    from driveguard.models import Zone
+
+    connects = {"n": 0}
+    sqls: list[str] = []
+
+    class Result:
+        def fetchone(self):
+            return {"exists": True}
+
+        def fetchall(self) -> list:
+            return []
+
+    class FakeConn:
+        def execute(self, statement, params=None):
+            sqls.append(str(statement))
+            return Result()
+
+        def commit(self) -> None:
+            return None
+
+    @contextmanager
+    def fake_connect():
+        connects["n"] += 1
+        yield FakeConn()
+
+    monkeypatch.setattr("driveguard.db.connect", fake_connect)
+    zone = Zone(
+        zone_id="TKY-C1-01",
+        name="C1",
+        lat=35.68,
+        lon=139.76,
+        radius_m=400,
+        historical_risk=0.4,
+    )
+    ready, telemetry, incidents = load_startup([zone])
+    joined = "\n".join(sqls)
+    assert connects["n"] == 1
+    assert ready is True
+    assert "pg_extension" in joined
+    assert "INSERT INTO accident_zones" in joined
+    assert "SELECT 1" in joined
+    assert "FROM telemetry" in joined
+    assert "FROM incidents" in joined
+    assert telemetry == []
+    assert incidents == []

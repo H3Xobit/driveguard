@@ -228,24 +228,14 @@ def _incident_from_row(row: dict[str, Any]) -> Incident | None:
         return None
 
 
-def hydrate_from_db(*, probe: bool = False) -> bool:
-    """Fill in-process buffers from Postgres.
-
-    When persist is off this is a no-op, unless ``probe`` is True (API start).
-    Probe uses the same connection as the recent queries to decide persist.
-    """
+def hydrate_rows(
+    rows: list[dict[str, Any]],
+    incident_rows: list[dict[str, Any]],
+    *,
+    probe: bool = False,
+) -> bool:
+    """Fill buffers from rows already loaded. ``probe`` marks Postgres as up."""
     global _RESTORED
-    if not probe and not _PERSIST:
-        _RESTORED = False
-        return False
-    try:
-        from driveguard.db import fetch_recent_desk_rows
-
-        rows, incident_rows = fetch_recent_desk_rows()
-    except Exception:
-        set_persist(False)
-        _RESTORED = False
-        return False
     if probe:
         set_persist(True)
     samples: list[TelemetrySample] = []
@@ -272,3 +262,24 @@ def hydrate_from_db(*, probe: bool = False) -> bool:
             _INCIDENTS.appendleft(incident)
     _RESTORED = True
     return True
+
+
+def hydrate_from_db(*, probe: bool = False) -> bool:
+    """Fill in-process buffers from Postgres.
+
+    When persist is off this is a no-op, unless ``probe`` is True (API start).
+    Probe uses the same connection as the recent queries to decide persist.
+    """
+    global _RESTORED
+    if not probe and not _PERSIST:
+        _RESTORED = False
+        return False
+    try:
+        from driveguard.db import fetch_recent_desk_rows
+
+        rows, incident_rows = fetch_recent_desk_rows()
+    except Exception:
+        set_persist(False)
+        _RESTORED = False
+        return False
+    return hydrate_rows(rows, incident_rows, probe=probe)

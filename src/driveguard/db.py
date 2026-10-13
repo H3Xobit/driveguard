@@ -44,51 +44,60 @@ def db_available() -> bool:
         return False
 
 
+def postgis_installed(conn: psycopg.Connection) -> bool:
+    row = conn.execute(
+        "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis')"
+    ).fetchone()
+    return bool(row and row.get("exists"))
+
+
 def postgis_ready() -> bool:
     try:
         with connect() as conn:
-            row = conn.execute(
-                "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis')"
-            ).fetchone()
-        return bool(row and row.get("exists"))
+            return postgis_installed(conn)
     except Exception:
         return False
+
+
+def write_zones(conn: psycopg.Connection, zones: list[Zone]) -> int:
+    for zone in zones:
+        conn.execute(
+            """
+            INSERT INTO accident_zones (
+                zone_id, name, lat, lon, radius_m, historical_risk, geog
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s,
+                ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography
+            )
+            ON CONFLICT (zone_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                lat = EXCLUDED.lat,
+                lon = EXCLUDED.lon,
+                radius_m = EXCLUDED.radius_m,
+                historical_risk = EXCLUDED.historical_risk,
+                geog = EXCLUDED.geog
+            """,
+            (
+                zone.zone_id,
+                zone.name,
+                zone.lat,
+                zone.lon,
+                zone.radius_m,
+                zone.historical_risk,
+                zone.lon,
+                zone.lat,
+            ),
+        )
+    return len(zones)
 
 
 def seed_zones(zones: list[Zone]) -> int:
     if not zones:
         return 0
     with connect() as conn:
-        for zone in zones:
-            conn.execute(
-                """
-                INSERT INTO accident_zones (
-                    zone_id, name, lat, lon, radius_m, historical_risk, geog
-                ) VALUES (
-                    %s, %s, %s, %s, %s, %s,
-                    ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography
-                )
-                ON CONFLICT (zone_id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    lat = EXCLUDED.lat,
-                    lon = EXCLUDED.lon,
-                    radius_m = EXCLUDED.radius_m,
-                    historical_risk = EXCLUDED.historical_risk,
-                    geog = EXCLUDED.geog
-                """,
-                (
-                    zone.zone_id,
-                    zone.name,
-                    zone.lat,
-                    zone.lon,
-                    zone.radius_m,
-                    zone.historical_risk,
-                    zone.lon,
-                    zone.lat,
-                ),
-            )
+        written = write_zones(conn, zones)
         conn.commit()
-    return len(zones)
+    return written
 
 
 def zone_hit_sql(lat: float, lon: float) -> tuple[float, str | None]:
@@ -281,3 +290,19 @@ def fetch_recent_desk_rows(
         telemetry = fetch_recent_telemetry(conn, per_vehicle=per_vehicle)
         incidents = fetch_recent_incidents(conn, limit=limit)
         return telemetry, incidents
+
+
+def load_startup(
+    zones: list[Zone], per_vehicle: int = 32, limit: int = 80
+) -> tuple[bool, list[dict[str, Any]], list[dict[str, Any]]]:
+    """PostGIS check, zone seed, persist probe, and both recent queries on one connection."""
+    with connect() as conn:
+        conn.execute("SELECT 1")
+        ready = postgis_installed(conn)
+        if ready:
+            write_zones(conn, zones)
+        ensure_runtime_schema(conn)
+        conn.commit()
+        telemetry = fetch_recent_telemetry(conn, per_vehicle=per_vehicle)
+        incidents = fetch_recent_incidents(conn, limit=limit)
+        return ready, telemetry, incidents

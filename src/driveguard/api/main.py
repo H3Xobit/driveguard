@@ -12,7 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
 from driveguard import __version__
-from driveguard.geo import enable_postgis, geo_backend, load_zones
+from driveguard.db import load_startup
+from driveguard.geo import geo_backend, load_zones, set_geo_backend
 from driveguard.ingestion.consumer import start_background
 from driveguard.models import AlertCode, BehaviorTag, HealthResponse
 from driveguard.risk.scoring import ALERT_WEIGHT, SPEED_BANDS
@@ -20,13 +21,14 @@ from driveguard.settings import get_settings
 from driveguard.store import (
     alert_mix,
     get_incident,
-    hydrate_from_db,
+    hydrate_rows,
     inject_behavior,
     list_incidents,
     list_scores,
     persist_enabled,
     restored_from_db,
     seed_demo,
+    set_persist,
     vehicles_snapshot,
 )
 
@@ -34,11 +36,15 @@ from driveguard.store import (
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     try:
-        enable_postgis()
+        postgis, rows, incident_rows = load_startup(load_zones())
     except Exception:
-        pass
-    if not hydrate_from_db(probe=True):
+        set_geo_backend(False)
+        set_persist(False)
         seed_demo()
+    else:
+        set_geo_backend(postgis)
+        if not hydrate_rows(rows, incident_rows, probe=True):
+            seed_demo()
     mqtt = start_background()
     yield
     if mqtt is not None:

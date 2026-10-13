@@ -34,16 +34,21 @@ def geo_backend() -> str:
     return _BACKEND
 
 
+def set_geo_backend(postgis: bool) -> None:
+    """Choose ST_DWithin or haversine. Seeding happens on the startup connection."""
+    global _BACKEND
+    _BACKEND = "postgis" if postgis else "haversine"
+
+
 def enable_postgis() -> bool:
     """Seed zones and switch zone_risk to ST_DWithin. Returns False when DB is offline."""
-    global _BACKEND
     from driveguard.db import postgis_ready, seed_zones
 
     if not postgis_ready():
-        _BACKEND = "haversine"
+        set_geo_backend(False)
         return False
     seed_zones(load_zones())
-    _BACKEND = "postgis"
+    set_geo_backend(True)
     return True
 
 

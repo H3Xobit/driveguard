@@ -140,6 +140,40 @@ def test_hydrate_probe_enables_persist_without_prior_flag(monkeypatch) -> None:
     assert restored_from_db() is True
 
 
+def test_hydrate_rows_use_startup_hits(monkeypatch) -> None:
+    def boom(*_args, **_kwargs):
+        raise AssertionError("hydrate opened a zone lookup")
+
+    monkeypatch.setattr("driveguard.store.zone_risk", boom)
+    now = datetime.now(UTC)
+    row = {
+        "time": now,
+        "vehicle_id": "V-9001",
+        "speed_kmh": 62.0,
+        "accel_ms2": 0.4,
+        "brake": 0.1,
+        "steering_var": 1.2,
+        "lat": 35.6812,
+        "lon": 139.7671,
+        "heading_deg": 90.0,
+        "behavior": BehaviorTag.calm.value,
+        "alert": "cas_hmw",
+        "source": "cas",
+        "alert_score": 2.4,
+    }
+    from driveguard.store import hydrate_rows
+
+    assert hydrate_rows(
+        [row, dict(row)],
+        [],
+        probe=True,
+        zone_hits={(35.6812, 139.7671): (0.8, "TKY-C1-01")},
+    )
+    restored = next(item for item in vehicles_snapshot() if item["vehicle_id"] == "V-9001")
+    assert restored["nearest_zone"] == "TKY-C1-01"
+    assert restored["zone"] == 0.8
+
+
 def test_hydrate_db_error_disables_persist(monkeypatch) -> None:
     set_persist(True)
 

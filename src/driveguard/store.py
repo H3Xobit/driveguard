@@ -66,15 +66,28 @@ def _maybe_persist(sample: TelemetrySample, incident: Incident | None) -> None:
         set_persist(False)
 
 
+def _zone_for(
+    lat: float,
+    lon: float,
+    zone_hits: dict[tuple[float, float], tuple[float, str | None]] | None,
+) -> tuple[float, str | None]:
+    if zone_hits is not None:
+        return zone_hits.get((float(lat), float(lon)), (0.0, None))
+    return zone_risk(lat, lon)
+
+
 def _score_into_buffers(
-    sample: TelemetrySample, *, emit_incident: bool
+    sample: TelemetrySample,
+    *,
+    emit_incident: bool,
+    zone_hits: dict[tuple[float, float], tuple[float, str | None]] | None = None,
 ) -> tuple[dict[str, Any], Incident | None]:
     settings = get_settings()
-    zone, zone_id = zone_risk(sample.lat, sample.lon)
+    zone, zone_id = _zone_for(sample.lat, sample.lon, zone_hits)
     buf = _TELEM[sample.vehicle_id]
     buf.append(sample)
     samples = list(buf)
-    zones = [zone_risk(s.lat, s.lon)[0] for s in samples]
+    zones = [_zone_for(s.lat, s.lon, zone_hits)[0] for s in samples]
     scored = score_window(samples, zones)
     scored["vehicle_id"] = sample.vehicle_id
     scored["behavior"] = sample.behavior.value
@@ -233,8 +246,13 @@ def hydrate_rows(
     incident_rows: list[dict[str, Any]],
     *,
     probe: bool = False,
+    zone_hits: dict[tuple[float, float], tuple[float, str | None]] | None = None,
 ) -> bool:
-    """Fill buffers from rows already loaded. ``probe`` marks Postgres as up."""
+    """Fill buffers from rows already loaded. ``probe`` marks Postgres as up.
+
+    ``zone_hits`` is the corridor lookup from the startup connection. When it
+    is set, scoring does not open a session per sample.
+    """
     global _RESTORED
     if probe:
         set_persist(True)
@@ -257,7 +275,7 @@ def hydrate_rows(
         _INCIDENTS.clear()
         _LATEST.clear()
         for sample in samples:
-            _score_into_buffers(sample, emit_incident=False)
+            _score_into_buffers(sample, emit_incident=False, zone_hits=zone_hits)
         for incident in reversed(incidents):
             _INCIDENTS.appendleft(incident)
     _RESTORED = True

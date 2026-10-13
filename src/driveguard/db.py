@@ -108,6 +108,48 @@ def zone_hit_sql(lat: float, lon: float) -> tuple[float, str | None]:
     return float(row["historical_risk"]), str(row["zone_id"])
 
 
+ZONE_HITS_SQL = """
+SELECT DISTINCT ON (p.idx)
+    p.idx,
+    z.zone_id,
+    z.historical_risk
+FROM unnest(%s::float8[], %s::float8[]) WITH ORDINALITY AS p(lat, lon, idx)
+JOIN accident_zones AS z
+    ON ST_DWithin(
+        z.geog,
+        ST_SetSRID(ST_MakePoint(p.lon, p.lat), 4326)::geography,
+        z.radius_m
+    )
+ORDER BY p.idx, z.historical_risk DESC
+"""
+
+
+def zone_hits_on(
+    conn: psycopg.Connection, points: list[tuple[float, float]]
+) -> dict[tuple[float, float], tuple[float, str | None]]:
+    """Highest-risk corridor hit for each point, on the caller's connection."""
+    unique: list[tuple[float, float]] = []
+    seen: set[tuple[float, float]] = set()
+    for lat, lon in points:
+        key = (float(lat), float(lon))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(key)
+    if not unique:
+        return {}
+    lats = [lat for lat, _lon in unique]
+    lons = [lon for _lat, lon in unique]
+    rows = conn.execute(ZONE_HITS_SQL, (lats, lons)).fetchall()
+    hits: dict[tuple[float, float], tuple[float, str | None]] = {
+        key: (0.0, None) for key in unique
+    }
+    for row in rows:
+        key = unique[int(row["idx"]) - 1]
+        hits[key] = (float(row["historical_risk"]), str(row["zone_id"]))
+    return hits
+
+
 def _ensure_alert_columns(conn: psycopg.Connection, table: str) -> None:
     if table not in {"telemetry", "incidents"}:
         raise ValueError(table)
@@ -305,4 +347,10 @@ def load_startup(
         conn.commit()
         telemetry = fetch_recent_telemetry(conn, per_vehicle=per_vehicle)
         incidents = fetch_recent_incidents(conn, limit=limit)
-        return ready, telemetry, incidents
+        hits: dict[tuple[float, float], tuple[float, str | None]] = {}
+        if ready:
+            hits = zone_hits_on(
+                conn,
+                [(float(row["lat"]), float(row["lon"])) for row in telemetry],
+            )
+        return ready, telemetry, incidents, hits

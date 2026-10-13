@@ -36,14 +36,19 @@ from driveguard.store import (
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     try:
-        postgis, rows, incident_rows = load_startup(load_zones())
+        postgis, rows, incident_rows, zone_hits = load_startup(load_zones())
     except Exception:
         set_geo_backend(False)
         set_persist(False)
         seed_demo()
     else:
         set_geo_backend(postgis)
-        if not hydrate_rows(rows, incident_rows, probe=True):
+        if not hydrate_rows(
+            rows,
+            incident_rows,
+            probe=True,
+            zone_hits=zone_hits if postgis else None,
+        ):
             seed_demo()
     mqtt = start_background()
     yield

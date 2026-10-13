@@ -212,7 +212,7 @@ def test_load_startup_uses_one_connection(monkeypatch: pytest.MonkeyPatch) -> No
         radius_m=400,
         historical_risk=0.4,
     )
-    ready, telemetry, incidents = load_startup([zone])
+    ready, telemetry, incidents, hits = load_startup([zone])
     joined = "\n".join(sqls)
     assert connects["n"] == 1
     assert ready is True
@@ -221,5 +221,32 @@ def test_load_startup_uses_one_connection(monkeypatch: pytest.MonkeyPatch) -> No
     assert "SELECT 1" in joined
     assert "FROM telemetry" in joined
     assert "FROM incidents" in joined
+    assert "unnest" not in joined.lower()
     assert telemetry == []
     assert incidents == []
+    assert hits == {}
+
+
+def test_zone_hits_on_one_query() -> None:
+    from driveguard.db import zone_hits_on
+
+    captured: dict = {}
+
+    class Result:
+        def fetchall(self) -> list:
+            return [{"idx": 1, "zone_id": "TKY-C1-01", "historical_risk": 0.8}]
+
+    class FakeConn:
+        def execute(self, statement, params=None):
+            captured["sql"] = str(statement)
+            captured["params"] = params
+            return Result()
+
+    hits = zone_hits_on(FakeConn(), [(35.68, 139.76), (35.68, 139.76)])  # type: ignore[arg-type]
+    sql = captured["sql"]
+    assert "unnest" in sql.lower()
+    assert "DISTINCT ON" in sql
+    assert "ST_DWithin" in sql
+    assert "historical_risk DESC" in sql
+    assert captured["params"] == ([35.68], [139.76])
+    assert hits[(35.68, 139.76)] == (0.8, "TKY-C1-01")

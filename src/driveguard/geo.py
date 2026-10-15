@@ -6,12 +6,15 @@ import json
 import math
 from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 
 from driveguard.models import Zone
 
 ASSETS = Path(__file__).resolve().parent / "assets"
 
 _BACKEND = "haversine"
+_ZONE_HITS: dict[tuple[float, float], tuple[float, str | None]] = {}
+_ZONE_LOCK = Lock()
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -40,6 +43,22 @@ def set_geo_backend(postgis: bool) -> None:
     _BACKEND = "postgis" if postgis else "haversine"
 
 
+def clear_zone_hits() -> None:
+    """Drop the process-local corridor cache. Tests and a failed startup use this."""
+    with _ZONE_LOCK:
+        _ZONE_HITS.clear()
+
+
+def remember_zone_hits(
+    hits: dict[tuple[float, float], tuple[float, str | None]],
+) -> None:
+    """Replace the corridor cache with hits already resolved on the startup connection."""
+    with _ZONE_LOCK:
+        _ZONE_HITS.clear()
+        for (lat, lon), hit in hits.items():
+            _ZONE_HITS[(float(lat), float(lon))] = hit
+
+
 def enable_postgis() -> bool:
     """Seed zones and switch zone_risk to ST_DWithin. Returns False when DB is offline."""
     from driveguard.db import postgis_ready, seed_zones
@@ -55,12 +74,24 @@ def enable_postgis() -> bool:
 def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
     """Return max historical risk of any zone whose radius covers the point."""
     if _BACKEND == "postgis":
+        key = (float(lat), float(lon))
+        with _ZONE_LOCK:
+            cached = _ZONE_HITS.get(key)
+        if cached is not None:
+            return cached
         try:
             from driveguard.db import zone_hit_sql
 
-            return zone_hit_sql(lat, lon)
+            hit = zone_hit_sql(lat, lon)
         except Exception:
             pass
+        else:
+            with _ZONE_LOCK:
+                existing = _ZONE_HITS.get(key)
+                if existing is not None:
+                    return existing
+                _ZONE_HITS[key] = hit
+            return hit
     return _zone_risk_haversine(lat, lon)
 
 

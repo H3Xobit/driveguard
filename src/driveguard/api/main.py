@@ -13,7 +13,13 @@ from sse_starlette.sse import EventSourceResponse
 
 from driveguard import __version__
 from driveguard.db import load_startup
-from driveguard.geo import geo_backend, load_zones, set_geo_backend
+from driveguard.geo import (
+    clear_zone_hits,
+    geo_backend,
+    load_zones,
+    remember_zone_hits,
+    set_geo_backend,
+)
 from driveguard.ingestion.consumer import start_background
 from driveguard.models import AlertCode, BehaviorTag, HealthResponse
 from driveguard.risk.scoring import ALERT_WEIGHT, SPEED_BANDS
@@ -39,10 +45,15 @@ async def lifespan(_app: FastAPI):
         postgis, rows, incident_rows, zone_hits = load_startup(load_zones())
     except Exception:
         set_geo_backend(False)
+        clear_zone_hits()
         set_persist(False)
         seed_demo()
     else:
         set_geo_backend(postgis)
+        if postgis:
+            remember_zone_hits(zone_hits)
+        else:
+            clear_zone_hits()
         if not hydrate_rows(
             rows,
             incident_rows,

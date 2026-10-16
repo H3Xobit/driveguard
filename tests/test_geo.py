@@ -29,6 +29,34 @@ def test_postgis_zone_risk_hits_sql_once(monkeypatch) -> None:
         geo.set_geo_backend(False)
 
 
+def test_nearby_samples_share_one_corridor_cell(monkeypatch) -> None:
+    from driveguard import geo
+
+    calls: list[float] = []
+
+    def fake_hit(lat: float, _lon: float) -> tuple[float, str | None]:
+        calls.append(lat)
+        return (0.4 if len(calls) == 1 else 0.9), "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    lat0 = 35.6812
+    lat1 = lat0 + 2 / geo._M_PER_DEG
+    far = lat0 + 20 / geo._M_PER_DEG
+    try:
+        assert geo.corridor_cell(lat0, 139.76) == geo.corridor_cell(lat1, 139.76)
+        assert geo.corridor_cell(lat0, 139.76) != geo.corridor_cell(far, 139.76)
+        assert geo.zone_risk(lat0, 139.76) == (0.4, "TKY-C1-01")
+        assert geo.zone_risk(lat1, 139.76) == (0.4, "TKY-C1-01")
+        assert calls == [lat0]
+        assert geo.zone_risk(far, 139.76) == (0.9, "TKY-C1-01")
+        assert calls == [lat0, far]
+    finally:
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+
+
 def test_tokyo_c1_without_database() -> None:
     geo._BACKEND = "haversine"
     risk, name = zone_risk(35.683, 139.776)

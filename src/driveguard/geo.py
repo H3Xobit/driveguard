@@ -13,8 +13,22 @@ from driveguard.models import Zone
 ASSETS = Path(__file__).resolve().parent / "assets"
 
 _BACKEND = "haversine"
-_ZONE_HITS: dict[tuple[float, float], tuple[float, str | None]] = {}
+# 111_320 m per degree is the usual WGS84 latitude scale. Longitude uses
+# cos of the Tokyo corridor so a cell stays about GRID_M meters on both axes.
+_M_PER_DEG = 111_320.0
+_REF_LAT = 35.68
+_M_PER_DEG_LON = _M_PER_DEG * math.cos(math.radians(_REF_LAT))
+GRID_M = 10
+_ZONE_HITS: dict[tuple[int, int], tuple[float, str | None]] = {}
 _ZONE_LOCK = Lock()
+
+
+def corridor_cell(lat: float, lon: float) -> tuple[int, int]:
+    """10 m grid cell for a WGS84 point on the Tokyo corridor."""
+    return (
+        math.floor(float(lat) * _M_PER_DEG / GRID_M),
+        math.floor(float(lon) * _M_PER_DEG_LON / GRID_M),
+    )
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -56,7 +70,9 @@ def remember_zone_hits(
     with _ZONE_LOCK:
         _ZONE_HITS.clear()
         for (lat, lon), hit in hits.items():
-            _ZONE_HITS[(float(lat), float(lon))] = hit
+            key = corridor_cell(lat, lon)
+            if key not in _ZONE_HITS:
+                _ZONE_HITS[key] = hit
 
 
 def enable_postgis() -> bool:
@@ -74,7 +90,7 @@ def enable_postgis() -> bool:
 def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
     """Return max historical risk of any zone whose radius covers the point."""
     if _BACKEND == "postgis":
-        key = (float(lat), float(lon))
+        key = corridor_cell(lat, lon)
         with _ZONE_LOCK:
             cached = _ZONE_HITS.get(key)
         if cached is not None:

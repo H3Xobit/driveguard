@@ -19,8 +19,17 @@ _M_PER_DEG = 111_320.0
 _REF_LAT = 35.68
 _M_PER_DEG_LON = _M_PER_DEG * math.cos(math.radians(_REF_LAT))
 GRID_M = 10
+# 2048 cells is about 20 km of distinct 10 m cells, enough for one corridor run.
+_CACHE_CAP = 2048
 _ZONE_HITS: dict[tuple[int, int], tuple[float, str | None]] = {}
 _ZONE_LOCK = Lock()
+
+
+def _store_cell(key: tuple[int, int], hit: tuple[float, str | None]) -> None:
+    """Store one cell. Caller holds _ZONE_LOCK. Drops the oldest cells past the cap."""
+    _ZONE_HITS[key] = hit
+    while len(_ZONE_HITS) > _CACHE_CAP:
+        del _ZONE_HITS[next(iter(_ZONE_HITS))]
 
 
 def corridor_cell(lat: float, lon: float) -> tuple[int, int]:
@@ -72,7 +81,7 @@ def remember_zone_hits(
         for (lat, lon), hit in hits.items():
             key = corridor_cell(lat, lon)
             if key not in _ZONE_HITS:
-                _ZONE_HITS[key] = hit
+                _store_cell(key, hit)
 
 
 def enable_postgis() -> bool:
@@ -106,7 +115,7 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
                 existing = _ZONE_HITS.get(key)
                 if existing is not None:
                     return existing
-                _ZONE_HITS[key] = hit
+                _store_cell(key, hit)
             return hit
     return _zone_risk_haversine(lat, lon)
 

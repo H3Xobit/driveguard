@@ -57,6 +57,41 @@ def test_nearby_samples_share_one_corridor_cell(monkeypatch) -> None:
         geo.set_geo_backend(False)
 
 
+def test_corridor_cache_drops_oldest_cell(monkeypatch) -> None:
+    from driveguard import geo
+
+    calls: list[float] = []
+
+    def fake_hit(lat: float, _lon: float) -> tuple[float, str | None]:
+        calls.append(lat)
+        return float(len(calls)), "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    cap = geo._CACHE_CAP
+    geo._CACHE_CAP = 2
+    lats = [35.6812 + i * 20 / geo._M_PER_DEG for i in range(3)]
+    lon = 139.76
+    try:
+        cells = [geo.corridor_cell(lat, lon) for lat in lats]
+        assert len(set(cells)) == 3
+        assert geo.zone_risk(lats[0], lon) == (1.0, "TKY-C1-01")
+        assert geo.zone_risk(lats[1], lon) == (2.0, "TKY-C1-01")
+        assert geo.zone_risk(lats[2], lon) == (3.0, "TKY-C1-01")
+        assert len(geo._ZONE_HITS) == 2
+        assert cells[0] not in geo._ZONE_HITS
+        before = len(calls)
+        assert geo.zone_risk(lats[1], lon) == (2.0, "TKY-C1-01")
+        assert len(calls) == before
+        assert geo.zone_risk(lats[0], lon) == (4.0, "TKY-C1-01")
+        assert len(calls) == before + 1
+    finally:
+        geo._CACHE_CAP = cap
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+
+
 def test_tokyo_c1_without_database() -> None:
     geo._BACKEND = "haversine"
     risk, name = zone_risk(35.683, 139.776)

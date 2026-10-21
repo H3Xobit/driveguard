@@ -6,7 +6,7 @@ import json
 import math
 from functools import lru_cache
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock
 
 from driveguard.models import Zone
 
@@ -23,6 +23,18 @@ GRID_M = 10
 _CACHE_CAP = 2048
 _ZONE_HITS: dict[tuple[int, int], tuple[float, str | None]] = {}
 _ZONE_LOCK = Lock()
+
+
+class _CellLookup:
+    """One in-flight ST_DWithin for a cell. Waiters share its result."""
+
+    def __init__(self) -> None:
+        self.done = Event()
+        self.hit: tuple[float, str | None] | None = None
+        self.waiting = 0
+
+
+_LOOKUPS: dict[tuple[int, int], _CellLookup] = {}
 
 
 def _store_cell(key: tuple[int, int], hit: tuple[float, str | None]) -> None:
@@ -98,26 +110,49 @@ def enable_postgis() -> bool:
 
 def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
     """Return max historical risk of any zone whose radius covers the point."""
-    if _BACKEND == "postgis":
-        key = corridor_cell(lat, lon)
-        with _ZONE_LOCK:
-            cached = _ZONE_HITS.get(key)
+    if _BACKEND != "postgis":
+        return _zone_risk_haversine(lat, lon)
+    key = corridor_cell(lat, lon)
+    with _ZONE_LOCK:
+        cached = _ZONE_HITS.get(key)
         if cached is not None:
             return cached
-        try:
-            from driveguard.db import zone_hit_sql
-
-            hit = zone_hit_sql(lat, lon)
-        except Exception:
-            pass
+        lookup = _LOOKUPS.get(key)
+        if lookup is None:
+            lookup = _CellLookup()
+            _LOOKUPS[key] = lookup
+            leader = True
         else:
-            with _ZONE_LOCK:
-                existing = _ZONE_HITS.get(key)
-                if existing is not None:
-                    return existing
+            lookup.waiting += 1
+            leader = False
+    if not leader:
+        lookup.done.wait()
+        if lookup.hit is not None:
+            return lookup.hit
+        return _zone_risk_haversine(lat, lon)
+    hit: tuple[float, str | None] | None = None
+    try:
+        from driveguard.db import zone_hit_sql
+
+        hit = zone_hit_sql(lat, lon)
+    except Exception:
+        hit = None
+    else:
+        with _ZONE_LOCK:
+            existing = _ZONE_HITS.get(key)
+            if existing is not None:
+                hit = existing
+            else:
                 _store_cell(key, hit)
-            return hit
-    return _zone_risk_haversine(lat, lon)
+    finally:
+        lookup.hit = hit
+        with _ZONE_LOCK:
+            if _LOOKUPS.get(key) is lookup:
+                del _LOOKUPS[key]
+        lookup.done.set()
+    if hit is None:
+        return _zone_risk_haversine(lat, lon)
+    return hit
 
 
 def _zone_risk_haversine(lat: float, lon: float) -> tuple[float, str | None]:

@@ -92,6 +92,67 @@ def test_corridor_cache_drops_oldest_cell(monkeypatch) -> None:
         geo.set_geo_backend(False)
 
 
+def test_concurrent_miss_shares_one_corridor_lookup(monkeypatch) -> None:
+    import threading
+    import time
+
+    from driveguard import geo
+
+    calls: list[float] = []
+    entered = threading.Event()
+    release = threading.Event()
+
+    def fake_hit(lat: float, _lon: float) -> tuple[float, str | None]:
+        calls.append(lat)
+        entered.set()
+        assert release.wait(2)
+        return 0.4, "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    lat = 35.6812
+    lon = 139.76
+    key = geo.corridor_cell(lat, lon)
+    results: list[tuple[float, str | None]] = []
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            results.append(geo.zone_risk(lat, lon))
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    try:
+        threads[0].start()
+        assert entered.wait(2)
+        threads[1].start()
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            with geo._ZONE_LOCK:
+                lookup = geo._LOOKUPS.get(key)
+                waiting = lookup.waiting if lookup is not None else 0
+            if waiting >= 1:
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("second sample did not wait")
+        assert calls == [lat]
+        release.set()
+        for thread in threads:
+            thread.join(timeout=2)
+        assert errors == []
+        assert not any(thread.is_alive() for thread in threads)
+        assert results == [(0.4, "TKY-C1-01"), (0.4, "TKY-C1-01")]
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join(timeout=2)
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+
+
 def test_tokyo_c1_without_database() -> None:
     geo._BACKEND = "haversine"
     risk, name = zone_risk(35.683, 139.776)

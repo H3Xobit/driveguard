@@ -153,6 +153,37 @@ def test_concurrent_miss_shares_one_corridor_lookup(monkeypatch) -> None:
         geo.set_geo_backend(False)
 
 
+def test_failed_corridor_lookup_keeps_haversine(monkeypatch) -> None:
+    from driveguard import geo
+
+    calls: list[float] = []
+
+    def fake_hit(lat: float, _lon: float) -> tuple[float, str | None]:
+        calls.append(lat)
+        raise RuntimeError("postgis down")
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    lat0 = 35.683
+    lon = 139.776
+    lat1 = lat0 + 2 / geo._M_PER_DEG
+    far = lat0 + 20 / geo._M_PER_DEG
+    try:
+        assert geo.corridor_cell(lat0, lon) == geo.corridor_cell(lat1, lon)
+        assert geo.corridor_cell(lat0, lon) != geo.corridor_cell(far, lon)
+        expected = geo._zone_risk_haversine(lat0, lon)
+        assert expected[1] == "TKY-C1-01"
+        assert geo.zone_risk(lat0, lon) == expected
+        assert geo.zone_risk(lat1, lon) == expected
+        assert calls == [lat0]
+        assert geo.zone_risk(far, lon) == geo._zone_risk_haversine(far, lon)
+        assert calls == [lat0, far]
+    finally:
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+
+
 def test_tokyo_c1_without_database() -> None:
     geo._BACKEND = "haversine"
     risk, name = zone_risk(35.683, 139.776)

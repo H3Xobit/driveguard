@@ -132,12 +132,12 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
         return _zone_risk_haversine(lat, lon)
     hit: tuple[float, str | None] | None = None
     try:
-        from driveguard.db import zone_hit_sql
+        try:
+            from driveguard.db import zone_hit_sql
 
-        hit = zone_hit_sql(lat, lon)
-    except Exception:
-        hit = None
-    else:
+            hit = zone_hit_sql(lat, lon)
+        except Exception:
+            hit = _zone_risk_haversine(lat, lon)
         with _ZONE_LOCK:
             existing = _ZONE_HITS.get(key)
             if existing is not None:

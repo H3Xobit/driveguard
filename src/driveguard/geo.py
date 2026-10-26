@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from functools import lru_cache
 from pathlib import Path
 from threading import Event, Lock
@@ -21,8 +22,16 @@ _M_PER_DEG_LON = _M_PER_DEG * math.cos(math.radians(_REF_LAT))
 GRID_M = 10
 # 2048 cells is about 20 km of distinct 10 m cells, enough for one corridor run.
 _CACHE_CAP = 2048
+# A failed lookup keeps its haversine result only this long, then the next
+# sample calls PostGIS again. time.monotonic ignores wall-clock steps.
+_FALLBACK_AGE_S = 30.0
 _ZONE_HITS: dict[tuple[int, int], tuple[float, str | None]] = {}
+_ZONE_FALLBACKS: dict[tuple[int, int], tuple[tuple[float, str | None], float]] = {}
 _ZONE_LOCK = Lock()
+
+
+def _now() -> float:
+    return time.monotonic()
 
 
 class _CellLookup:
@@ -38,10 +47,36 @@ _LOOKUPS: dict[tuple[int, int], _CellLookup] = {}
 
 
 def _store_cell(key: tuple[int, int], hit: tuple[float, str | None]) -> None:
-    """Store one cell. Caller holds _ZONE_LOCK. Drops the oldest cells past the cap."""
+    """Store one PostGIS cell. Caller holds _ZONE_LOCK. Drops the oldest cells past the cap."""
     _ZONE_HITS[key] = hit
+    _ZONE_FALLBACKS.pop(key, None)
     while len(_ZONE_HITS) > _CACHE_CAP:
         del _ZONE_HITS[next(iter(_ZONE_HITS))]
+
+
+def _fresh_fallback(key: tuple[int, int]) -> tuple[float, str | None] | None:
+    """Return a haversine fallback still inside its age. Caller holds _ZONE_LOCK."""
+    found = _ZONE_FALLBACKS.get(key)
+    if found is None:
+        return None
+    hit, stored = found
+    if _now() - stored >= _FALLBACK_AGE_S:
+        del _ZONE_FALLBACKS[key]
+        return None
+    return hit
+
+
+def _store_fallback(key: tuple[int, int], hit: tuple[float, str | None]) -> None:
+    """Remember a haversine fallback. Caller holds _ZONE_LOCK."""
+    now = _now()
+    stale = [
+        cell
+        for cell, (_, stored) in _ZONE_FALLBACKS.items()
+        if now - stored >= _FALLBACK_AGE_S
+    ]
+    for cell in stale:
+        del _ZONE_FALLBACKS[cell]
+    _ZONE_FALLBACKS[key] = (hit, now)
 
 
 def corridor_cell(lat: float, lon: float) -> tuple[int, int]:
@@ -82,6 +117,7 @@ def clear_zone_hits() -> None:
     """Drop the process-local corridor cache. Tests and a failed startup use this."""
     with _ZONE_LOCK:
         _ZONE_HITS.clear()
+        _ZONE_FALLBACKS.clear()
 
 
 def remember_zone_hits(
@@ -90,6 +126,7 @@ def remember_zone_hits(
     """Replace the corridor cache with hits already resolved on the startup connection."""
     with _ZONE_LOCK:
         _ZONE_HITS.clear()
+        _ZONE_FALLBACKS.clear()
         for (lat, lon), hit in hits.items():
             key = corridor_cell(lat, lon)
             if key not in _ZONE_HITS:
@@ -117,6 +154,9 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
         cached = _ZONE_HITS.get(key)
         if cached is not None:
             return cached
+        fallback = _fresh_fallback(key)
+        if fallback is not None:
+            return fallback
         lookup = _LOOKUPS.get(key)
         if lookup is None:
             lookup = _CellLookup()
@@ -132,16 +172,20 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
         return _zone_risk_haversine(lat, lon)
     hit: tuple[float, str | None] | None = None
     try:
+        failed = False
         try:
             from driveguard.db import zone_hit_sql
 
             hit = zone_hit_sql(lat, lon)
         except Exception:
+            failed = True
             hit = _zone_risk_haversine(lat, lon)
         with _ZONE_LOCK:
             existing = _ZONE_HITS.get(key)
             if existing is not None:
                 hit = existing
+            elif failed:
+                _store_fallback(key, hit)
             else:
                 _store_cell(key, hit)
     finally:

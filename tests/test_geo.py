@@ -178,7 +178,7 @@ def test_failed_corridor_lookup_keeps_haversine(monkeypatch) -> None:
         assert geo.zone_risk(lat1, lon) == expected
         assert calls == [lat0]
         assert geo.zone_risk(far, lon) == geo._zone_risk_haversine(far, lon)
-        assert calls == [lat0, far]
+        assert calls == [lat0]
     finally:
         geo.clear_zone_hits()
         geo.set_geo_backend(False)
@@ -213,6 +213,39 @@ def test_haversine_fallback_retries_after_age(monkeypatch) -> None:
         clock["now"] = 1000.0 + geo._FALLBACK_AGE_S
         assert geo.zone_risk(lat0, lon) == (0.55, "TKY-C1-01")
         assert calls == [lat0, lat0]
+    finally:
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+
+
+def test_postgis_pause_skips_other_cells(monkeypatch) -> None:
+    from driveguard import geo
+
+    calls: list[float] = []
+    clock = {"now": 1000.0}
+
+    def fake_hit(lat: float, _lon: float) -> tuple[float, str | None]:
+        calls.append(lat)
+        if len(calls) == 1:
+            raise RuntimeError("postgis down")
+        return 0.55, "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    monkeypatch.setattr(geo, "_now", lambda: clock["now"])
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    lat0 = 35.683
+    lon = 139.776
+    far = lat0 + 20 / geo._M_PER_DEG
+    try:
+        assert geo.corridor_cell(lat0, lon) != geo.corridor_cell(far, lon)
+        assert geo.zone_risk(lat0, lon) == geo._zone_risk_haversine(lat0, lon)
+        clock["now"] = 1000.0 + geo._FALLBACK_AGE_S - 0.1
+        assert geo.zone_risk(far, lon) == geo._zone_risk_haversine(far, lon)
+        assert calls == [lat0]
+        clock["now"] = 1000.0 + geo._FALLBACK_AGE_S
+        assert geo.zone_risk(far, lon) == (0.55, "TKY-C1-01")
+        assert calls == [lat0, far]
     finally:
         geo.clear_zone_hits()
         geo.set_geo_backend(False)

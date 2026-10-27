@@ -251,6 +251,64 @@ def test_postgis_pause_skips_other_cells(monkeypatch) -> None:
         geo.set_geo_backend(False)
 
 
+def test_one_probe_when_postgis_pause_ends(monkeypatch) -> None:
+    import threading
+
+    from driveguard import geo
+
+    calls: list[float] = []
+    clock = {"now": 1000.0}
+    entered = threading.Event()
+    release = threading.Event()
+
+    def fake_hit(lat: float, _lon: float) -> tuple[float, str | None]:
+        calls.append(lat)
+        if len(calls) == 1:
+            raise RuntimeError("postgis down")
+        if len(calls) == 2:
+            entered.set()
+            assert release.wait(2)
+            return 0.55, "TKY-C1-01"
+        return 0.2, "TKY-C1-02"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    monkeypatch.setattr(geo, "_now", lambda: clock["now"])
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    lat0 = 35.683
+    lon = 139.776
+    far = lat0 + 20 / geo._M_PER_DEG
+    farther = lat0 + 40 / geo._M_PER_DEG
+    results: list[tuple[float, str | None]] = []
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            results.append(geo.zone_risk(far, lon))
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=worker)
+    try:
+        assert len({geo.corridor_cell(lat, lon) for lat in (lat0, far, farther)}) == 3
+        assert geo.zone_risk(lat0, lon) == geo._zone_risk_haversine(lat0, lon)
+        clock["now"] = 1000.0 + geo._FALLBACK_AGE_S
+        thread.start()
+        assert entered.wait(2)
+        assert geo.zone_risk(farther, lon) == geo._zone_risk_haversine(farther, lon)
+        assert calls == [lat0, far]
+        release.set()
+        thread.join(timeout=2)
+        assert errors == []
+        assert not thread.is_alive()
+        assert results == [(0.55, "TKY-C1-01")]
+    finally:
+        release.set()
+        thread.join(timeout=2)
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+
+
 def test_tokyo_c1_without_database() -> None:
     geo._BACKEND = "haversine"
     risk, name = zone_risk(35.683, 139.776)

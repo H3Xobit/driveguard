@@ -29,6 +29,8 @@ _ZONE_HITS: dict[tuple[int, int], tuple[float, str | None]] = {}
 _ZONE_FALLBACKS: dict[tuple[int, int], tuple[tuple[float, str | None], float]] = {}
 # Set when a lookup fails. Every cell skips PostGIS until this age passes.
 _POSTGIS_FAILED_AT: float | None = None
+# One sample probes after the pause. Other cells stay on haversine until it finishes.
+_POSTGIS_PROBING = False
 _ZONE_LOCK = Lock()
 
 
@@ -124,22 +126,24 @@ def set_geo_backend(postgis: bool) -> None:
 
 def clear_zone_hits() -> None:
     """Drop the process-local corridor cache. Tests and a failed startup use this."""
-    global _POSTGIS_FAILED_AT
+    global _POSTGIS_FAILED_AT, _POSTGIS_PROBING
     with _ZONE_LOCK:
         _ZONE_HITS.clear()
         _ZONE_FALLBACKS.clear()
         _POSTGIS_FAILED_AT = None
+        _POSTGIS_PROBING = False
 
 
 def remember_zone_hits(
     hits: dict[tuple[float, float], tuple[float, str | None]],
 ) -> None:
     """Replace the corridor cache with hits already resolved on the startup connection."""
-    global _POSTGIS_FAILED_AT
+    global _POSTGIS_FAILED_AT, _POSTGIS_PROBING
     with _ZONE_LOCK:
         _ZONE_HITS.clear()
         _ZONE_FALLBACKS.clear()
         _POSTGIS_FAILED_AT = None
+        _POSTGIS_PROBING = False
         for (lat, lon), hit in hits.items():
             key = corridor_cell(lat, lon)
             if key not in _ZONE_HITS:
@@ -160,9 +164,11 @@ def enable_postgis() -> bool:
 
 def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
     """Return max historical risk of any zone whose radius covers the point."""
+    global _POSTGIS_FAILED_AT, _POSTGIS_PROBING
     if _BACKEND != "postgis":
         return _zone_risk_haversine(lat, lon)
     key = corridor_cell(lat, lon)
+    probing = False
     with _ZONE_LOCK:
         cached = _ZONE_HITS.get(key)
         if cached is not None:
@@ -171,25 +177,29 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
         if fallback is not None:
             return fallback
         if _postgis_paused():
-            paused = True
+            skip = True
         else:
-            paused = False
+            skip = False
             lookup = _LOOKUPS.get(key)
-            if lookup is None:
+            if lookup is not None:
+                lookup.waiting += 1
+                leader = False
+            elif _POSTGIS_FAILED_AT is not None and _POSTGIS_PROBING:
+                skip = True
+            else:
+                if _POSTGIS_FAILED_AT is not None:
+                    _POSTGIS_PROBING = True
+                    probing = True
                 lookup = _CellLookup()
                 _LOOKUPS[key] = lookup
                 leader = True
-            else:
-                lookup.waiting += 1
-                leader = False
-    if paused:
+    if skip:
         return _zone_risk_haversine(lat, lon)
     if not leader:
         lookup.done.wait()
         if lookup.hit is not None:
             return lookup.hit
         return _zone_risk_haversine(lat, lon)
-    global _POSTGIS_FAILED_AT
     hit: tuple[float, str | None] | None = None
     try:
         failed = False
@@ -215,6 +225,8 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
         with _ZONE_LOCK:
             if _LOOKUPS.get(key) is lookup:
                 del _LOOKUPS[key]
+            if probing:
+                _POSTGIS_PROBING = False
         lookup.done.set()
     if hit is None:
         return _zone_risk_haversine(lat, lon)

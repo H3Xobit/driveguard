@@ -282,7 +282,8 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
             if existing is not None:
                 hit = existing
             elif failed:
-                if probe_at is None or _POSTGIS_PROBE_AT == probe_at:
+                owns_probe = probe_at is not None and _POSTGIS_PROBE_AT == probe_at
+                if owns_probe or (probe_at is None and not _quiet_active()):
                     _POSTGIS_FAILED_AT = _now()
                 _store_fallback(key, hit)
             else:

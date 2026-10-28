@@ -421,6 +421,45 @@ def test_quiet_period_shares_one_lookup(monkeypatch) -> None:
         geo.set_geo_backend(False)
 
 
+def test_quiet_window_failure_does_not_pause_other_cells(monkeypatch) -> None:
+    from driveguard import geo
+
+    calls: list[float] = []
+    clock = {"now": 1000.0}
+
+    def fake_hit(lat: float, _lon: float) -> tuple[float, str | None]:
+        calls.append(lat)
+        if len(calls) == 1:
+            raise RuntimeError("postgis down")
+        if len(calls) == 2:
+            return 0.55, "TKY-C1-01"
+        if len(calls) == 3:
+            raise RuntimeError("one cell failed")
+        return 0.4, "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    monkeypatch.setattr(geo, "_now", lambda: clock["now"])
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    lat0 = 35.683
+    lon = 139.776
+    far = lat0 + 20 / geo._M_PER_DEG
+    farther = lat0 + 40 / geo._M_PER_DEG
+    other = lat0 + 60 / geo._M_PER_DEG
+    try:
+        cells = (lat0, far, farther, other)
+        assert len({geo.corridor_cell(lat, lon) for lat in cells}) == 4
+        geo.zone_risk(lat0, lon)
+        clock["now"] = 1000.0 + geo._FALLBACK_AGE_S
+        assert geo.zone_risk(far, lon) == (0.55, "TKY-C1-01")
+        assert geo.zone_risk(farther, lon) == geo._zone_risk_haversine(farther, lon)
+        assert geo.zone_risk(other, lon) == (0.4, "TKY-C1-01")
+        assert calls == [lat0, far, farther, other]
+    finally:
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+
+
 def test_tokyo_c1_without_database() -> None:
     geo._BACKEND = "haversine"
     risk, name = zone_risk(35.683, 139.776)

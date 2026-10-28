@@ -33,6 +33,10 @@ _POSTGIS_FAILED_AT: float | None = None
 # or until the probe itself is older than the fallback age.
 _POSTGIS_PROBING = False
 _POSTGIS_PROBE_AT: float | None = None
+# After a probe succeeds, one uncached lookup runs at a time until this instant.
+_POSTGIS_QUIET_UNTIL: float | None = None
+_POSTGIS_QUIET_SQL: int | None = None
+_QUIET_GEN = 0
 _ZONE_LOCK = Lock()
 
 
@@ -72,6 +76,20 @@ def _clear_probe() -> None:
     global _POSTGIS_PROBING, _POSTGIS_PROBE_AT
     _POSTGIS_PROBING = False
     _POSTGIS_PROBE_AT = None
+
+
+def _quiet_active() -> bool:
+    """True during the short window after a successful probe. Caller holds _ZONE_LOCK."""
+    if _POSTGIS_QUIET_UNTIL is None:
+        return False
+    return _now() < _POSTGIS_QUIET_UNTIL
+
+
+def _clear_quiet() -> None:
+    """Drop the post-probe quiet window. Caller holds _ZONE_LOCK."""
+    global _POSTGIS_QUIET_UNTIL, _POSTGIS_QUIET_SQL
+    _POSTGIS_QUIET_UNTIL = None
+    _POSTGIS_QUIET_SQL = None
 
 
 def _postgis_paused() -> bool:
@@ -148,6 +166,7 @@ def clear_zone_hits() -> None:
         _ZONE_FALLBACKS.clear()
         _POSTGIS_FAILED_AT = None
         _clear_probe()
+        _clear_quiet()
 
 
 def remember_zone_hits(
@@ -160,6 +179,7 @@ def remember_zone_hits(
         _ZONE_FALLBACKS.clear()
         _POSTGIS_FAILED_AT = None
         _clear_probe()
+        _clear_quiet()
         for (lat, lon), hit in hits.items():
             key = corridor_cell(lat, lon)
             if key not in _ZONE_HITS:
@@ -181,10 +201,12 @@ def enable_postgis() -> bool:
 def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
     """Return max historical risk of any zone whose radius covers the point."""
     global _POSTGIS_FAILED_AT, _POSTGIS_PROBING, _POSTGIS_PROBE_AT
+    global _POSTGIS_QUIET_UNTIL, _POSTGIS_QUIET_SQL, _QUIET_GEN
     if _BACKEND != "postgis":
         return _zone_risk_haversine(lat, lon)
     key = corridor_cell(lat, lon)
     probe_at: float | None = None
+    quiet_token: int | None = None
     with _ZONE_LOCK:
         cached = _ZONE_HITS.get(key)
         if cached is not None:
@@ -202,11 +224,17 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
                 leader = False
             elif _POSTGIS_FAILED_AT is not None and _probe_blocking():
                 skip = True
+            elif _quiet_active() and _POSTGIS_QUIET_SQL is not None:
+                skip = True
             else:
                 if _POSTGIS_FAILED_AT is not None:
                     probe_at = _now()
                     _POSTGIS_PROBING = True
                     _POSTGIS_PROBE_AT = probe_at
+                if _quiet_active():
+                    _QUIET_GEN += 1
+                    quiet_token = _QUIET_GEN
+                    _POSTGIS_QUIET_SQL = quiet_token
                 lookup = _CellLookup()
                 _LOOKUPS[key] = lookup
                 leader = True
@@ -238,6 +266,8 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
             else:
                 if probe_at is None or _POSTGIS_PROBE_AT == probe_at:
                     _POSTGIS_FAILED_AT = None
+                    if probe_at is not None:
+                        _POSTGIS_QUIET_UNTIL = _now() + _FALLBACK_AGE_S
                 _store_cell(key, hit)
     finally:
         lookup.hit = hit
@@ -246,6 +276,8 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
                 del _LOOKUPS[key]
             if probe_at is not None and _POSTGIS_PROBE_AT == probe_at:
                 _clear_probe()
+            if quiet_token is not None and _POSTGIS_QUIET_SQL == quiet_token:
+                _POSTGIS_QUIET_SQL = None
         lookup.done.set()
     if hit is None:
         return _zone_risk_haversine(lat, lon)

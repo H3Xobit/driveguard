@@ -111,17 +111,26 @@ def _fresh_fallback(key: tuple[int, int]) -> tuple[float, str | None] | None:
     return hit
 
 
-def _store_fallback(key: tuple[int, int], hit: tuple[float, str | None]) -> None:
-    """Remember a haversine fallback. Caller holds _ZONE_LOCK."""
+def _store_fallback(
+    key: tuple[int, int],
+    hit: tuple[float, str | None],
+    *,
+    until: float | None = None,
+) -> None:
+    """Remember a haversine fallback. Caller holds _ZONE_LOCK.
+
+    until makes the result expire at that instant instead of a full age from now.
+    """
     now = _now()
+    stored = now if until is None else until - _FALLBACK_AGE_S
     stale = [
         cell
-        for cell, (_, stored) in _ZONE_FALLBACKS.items()
-        if now - stored >= _FALLBACK_AGE_S
+        for cell, (_, seen) in _ZONE_FALLBACKS.items()
+        if now - seen >= _FALLBACK_AGE_S
     ]
     for cell in stale:
         del _ZONE_FALLBACKS[cell]
-    _ZONE_FALLBACKS[key] = (hit, now)
+    _ZONE_FALLBACKS[key] = (hit, stored)
 
 
 def corridor_cell(lat: float, lon: float) -> tuple[int, int]:
@@ -214,6 +223,7 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
         fallback = _fresh_fallback(key)
         if fallback is not None:
             return fallback
+        quiet_skip = False
         if _postgis_paused():
             skip = True
         else:
@@ -226,6 +236,7 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
                 skip = True
             elif _quiet_active() and _POSTGIS_QUIET_SQL is not None:
                 skip = True
+                quiet_skip = True
             else:
                 if _POSTGIS_FAILED_AT is not None:
                     probe_at = _now()
@@ -239,7 +250,18 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
                 _LOOKUPS[key] = lookup
                 leader = True
     if skip:
-        return _zone_risk_haversine(lat, lon)
+        hit = _zone_risk_haversine(lat, lon)
+        if quiet_skip:
+            with _ZONE_LOCK:
+                until = _POSTGIS_QUIET_UNTIL
+                if (
+                    until is not None
+                    and _now() < until
+                    and key not in _ZONE_HITS
+                    and _fresh_fallback(key) is None
+                ):
+                    _store_fallback(key, hit, until=until)
+        return hit
     if not leader:
         lookup.done.wait()
         if lookup.hit is not None:

@@ -406,6 +406,14 @@ def test_quiet_period_shares_one_lookup(monkeypatch) -> None:
         assert calls == [lat0, far, farther]
         assert geo.zone_risk(far, lon) == (0.55, "TKY-C1-01")
         assert calls == [lat0, far, farther]
+        release.set()
+        thread.join(timeout=2)
+        skipped = geo._zone_risk_haversine(other, lon)
+        assert geo.zone_risk(other, lon) == skipped
+        assert calls == [lat0, far, farther]
+        clock["now"] = 1000.0 + (2 * geo._FALLBACK_AGE_S)
+        assert geo.zone_risk(other, lon) == (0.2, "TKY-C1-02")
+        assert calls == [lat0, far, farther, other]
     finally:
         release.set()
         thread.join(timeout=2)

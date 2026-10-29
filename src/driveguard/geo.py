@@ -25,6 +25,10 @@ _CACHE_CAP = 2048
 # A failed lookup keeps its haversine result only this long, then the next
 # sample calls PostGIS again. time.monotonic ignores wall-clock steps.
 _FALLBACK_AGE_S = 30.0
+# After a probe succeeds, uncached cells share one lookup for this long.
+# It is shorter than the outage pause so a recovered database is used again
+# before that pause would have ended.
+_QUIET_S = 5.0
 _ZONE_HITS: dict[tuple[int, int], tuple[float, str | None]] = {}
 _ZONE_FALLBACKS: dict[tuple[int, int], tuple[tuple[float, str | None], float]] = {}
 # Set when a lookup fails. Every cell skips PostGIS until this age passes.
@@ -290,7 +294,7 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
                 if probe_at is None or _POSTGIS_PROBE_AT == probe_at:
                     _POSTGIS_FAILED_AT = None
                     if probe_at is not None:
-                        _POSTGIS_QUIET_UNTIL = _now() + _FALLBACK_AGE_S
+                        _POSTGIS_QUIET_UNTIL = _now() + _QUIET_S
                 _store_cell(key, hit)
     finally:
         lookup.hit = hit

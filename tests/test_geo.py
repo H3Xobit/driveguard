@@ -411,7 +411,9 @@ def test_quiet_period_shares_one_lookup(monkeypatch) -> None:
         skipped = geo._zone_risk_haversine(other, lon)
         assert geo.zone_risk(other, lon) == skipped
         assert calls == [lat0, far, farther]
-        clock["now"] = 1000.0 + (2 * geo._FALLBACK_AGE_S)
+        assert geo._QUIET_S < geo._FALLBACK_AGE_S
+        clock["now"] = 1000.0 + geo._FALLBACK_AGE_S + geo._QUIET_S
+        assert clock["now"] < 1000.0 + (2 * geo._FALLBACK_AGE_S)
         assert geo.zone_risk(other, lon) == (0.2, "TKY-C1-02")
         assert calls == [lat0, far, farther, other]
     finally:

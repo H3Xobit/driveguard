@@ -263,10 +263,13 @@ def test_ingest_resolves_zones_outside_the_desk_lock(monkeypatch) -> None:
         return 0.4, "TKY-C1-01"
 
     monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    sample = next(iter(iter_session(duration=1, inject=None)))
+    from driveguard.risk.temporal import score_window
+
+    score_window([sample], [0.0])
     geo.set_geo_backend(True)
     geo.clear_zone_hits()
     reset_store()
-    sample = next(iter(iter_session(duration=1, inject=None)))
     moved = sample.model_copy(update={"lat": sample.lat + 20 / geo._M_PER_DEG})
     try:
         assert geo.corridor_cell(sample.lat, sample.lon) != geo.corridor_cell(moved.lat, moved.lon)
@@ -279,4 +282,20 @@ def test_ingest_resolves_zones_outside_the_desk_lock(monkeypatch) -> None:
     finally:
         geo.clear_zone_hits()
         geo.set_geo_backend(False)
+        reset_store()
+
+
+def test_bad_mqtt_payload_is_skipped() -> None:
+    from driveguard.ingestion.consumer import handle_payload
+    from driveguard.store import reset_store
+
+    sample = next(iter(iter_session(duration=1, inject=None)))
+    reset_store()
+    try:
+        assert handle_payload("{") is None
+        assert handle_payload(b"\xff") is None
+        result = handle_payload(sample.model_dump_json())
+        assert result is not None
+        assert result["score"]["vehicle_id"] == sample.vehicle_id
+    finally:
         reset_store()

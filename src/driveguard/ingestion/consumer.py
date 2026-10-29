@@ -7,10 +7,14 @@ from driveguard.settings import get_settings
 from driveguard.store import ingest_sample
 
 
-def handle_payload(raw: str | bytes) -> dict:
-    if isinstance(raw, bytes):
-        raw = raw.decode()
-    sample = TelemetrySample.model_validate_json(raw)
+def handle_payload(raw: str | bytes) -> dict | None:
+    """Ingest one MQTT payload. A payload that does not parse is skipped."""
+    try:
+        if isinstance(raw, bytes):
+            raw = raw.decode()
+        sample = TelemetrySample.model_validate_json(raw)
+    except (UnicodeError, ValueError):
+        return None
     return ingest_sample(sample)
 
 

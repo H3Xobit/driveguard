@@ -139,8 +139,16 @@ def _trail_coords(vehicle_id: str) -> list[tuple[float, float]]:
     return [(s.lat, s.lon) for s in _TELEM[vehicle_id]]
 
 
+def _ensure_scorers() -> None:
+    """Train the baseline outside the desk lock. Training reads corridor zones."""
+    from driveguard.risk.temporal import _ensure_models
+
+    _ensure_models()
+
+
 def ingest_sample(sample: TelemetrySample) -> dict[str, Any]:
     """Score one sample. Corridor lookups run outside the desk lock."""
+    _ensure_scorers()
     scored: dict[str, Any] | None = None
     incident: Incident | None = None
     for _ in range(2):
@@ -300,6 +308,7 @@ def hydrate_rows(
     if not samples and not incidents:
         _RESTORED = False
         return False
+    _ensure_scorers()
     with _LOCK:
         _TELEM.clear()
         _SCORES.clear()

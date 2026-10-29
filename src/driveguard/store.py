@@ -9,7 +9,14 @@ from uuid import UUID
 
 from driveguard.geo import zone_risk
 from driveguard.llm.narrative import narrate_incident
-from driveguard.models import AlertCode, BehaviorTag, Incident, Severity, StreamSource, TelemetrySample
+from driveguard.models import (
+    AlertCode,
+    BehaviorTag,
+    Incident,
+    Severity,
+    StreamSource,
+    TelemetrySample,
+)
 from driveguard.risk.priority import prioritize
 from driveguard.risk.temporal import score_window
 from driveguard.settings import get_settings
@@ -81,13 +88,18 @@ def _score_into_buffers(
     *,
     emit_incident: bool,
     zone_hits: dict[tuple[float, float], tuple[float, str | None]] | None = None,
+    resolved: list[tuple[float, str | None]] | None = None,
 ) -> tuple[dict[str, Any], Incident | None]:
     settings = get_settings()
-    zone, zone_id = _zone_for(sample.lat, sample.lon, zone_hits)
     buf = _TELEM[sample.vehicle_id]
     buf.append(sample)
     samples = list(buf)
-    zones = [_zone_for(s.lat, s.lon, zone_hits)[0] for s in samples]
+    if resolved is not None and len(resolved) == len(samples):
+        zone, zone_id = resolved[-1]
+        zones = [item[0] for item in resolved]
+    else:
+        zone, zone_id = _zone_for(sample.lat, sample.lon, zone_hits)
+        zones = [_zone_for(s.lat, s.lon, zone_hits)[0] for s in samples]
     scored = score_window(samples, zones)
     scored["vehicle_id"] = sample.vehicle_id
     scored["behavior"] = sample.behavior.value
@@ -123,13 +135,32 @@ def _score_into_buffers(
     return scored, incident
 
 
+def _trail_coords(vehicle_id: str) -> list[tuple[float, float]]:
+    return [(s.lat, s.lon) for s in _TELEM[vehicle_id]]
+
+
 def ingest_sample(sample: TelemetrySample) -> dict[str, Any]:
-    with _LOCK:
-        scored, incident = _score_into_buffers(sample, emit_incident=True)
-        result = {
-            "score": scored,
-            "incident": incident.model_dump(mode="json") if incident else None,
-        }
+    """Score one sample. Corridor lookups run outside the desk lock."""
+    scored: dict[str, Any] | None = None
+    incident: Incident | None = None
+    for _ in range(2):
+        with _LOCK:
+            coords = _trail_coords(sample.vehicle_id)
+        resolved = [zone_risk(lat, lon) for lat, lon in coords]
+        resolved.append(zone_risk(sample.lat, sample.lon))
+        with _LOCK:
+            if _trail_coords(sample.vehicle_id) == coords:
+                scored, incident = _score_into_buffers(
+                    sample, emit_incident=True, resolved=resolved
+                )
+                break
+    if scored is None:
+        with _LOCK:
+            scored, incident = _score_into_buffers(sample, emit_incident=True)
+    result = {
+        "score": scored,
+        "incident": incident.model_dump(mode="json") if incident else None,
+    }
     _maybe_persist(sample, incident)
     return result
 

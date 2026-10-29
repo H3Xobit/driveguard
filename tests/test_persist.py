@@ -250,3 +250,33 @@ def test_zone_hits_on_one_query() -> None:
     assert "historical_risk DESC" in sql
     assert captured["params"] == ([35.68], [139.76])
     assert hits[(35.68, 139.76)] == (0.8, "TKY-C1-01")
+
+
+def test_ingest_resolves_zones_outside_the_desk_lock(monkeypatch) -> None:
+    from driveguard import geo
+    from driveguard.store import _LOCK, ingest_sample, reset_store
+
+    held: list[bool] = []
+
+    def fake_hit(_lat: float, _lon: float) -> tuple[float, str | None]:
+        held.append(_LOCK.locked())
+        return 0.4, "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    reset_store()
+    sample = next(iter(iter_session(duration=1, inject=None)))
+    moved = sample.model_copy(update={"lat": sample.lat + 20 / geo._M_PER_DEG})
+    try:
+        assert geo.corridor_cell(sample.lat, sample.lon) != geo.corridor_cell(moved.lat, moved.lon)
+        first = ingest_sample(sample)
+        second = ingest_sample(moved)
+        assert held == [False, False]
+        assert first["score"]["nearest_zone"] == "TKY-C1-01"
+        assert first["score"]["zone"] == 0.4
+        assert second["score"]["zone"] == 0.4
+    finally:
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+        reset_store()

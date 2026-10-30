@@ -174,6 +174,59 @@ def test_hydrate_rows_use_startup_hits(monkeypatch) -> None:
     assert restored["zone"] == 0.8
 
 
+def test_hydrate_resolves_zones_outside_the_desk_lock(monkeypatch) -> None:
+    from driveguard import geo
+    from driveguard.simulator.session import iter_session
+    from driveguard.store import _LOCK, hydrate_rows
+
+    held: list[bool] = []
+
+    def fake_hit(_lat: float, _lon: float) -> tuple[float, str | None]:
+        held.append(_LOCK.locked())
+        return 0.4, "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    sample = next(iter(iter_session(duration=1, inject=None)))
+    from driveguard.risk.temporal import score_window
+
+    score_window([sample], [0.0])
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    reset_store()
+    moved_lat = sample.lat + 20 / geo._M_PER_DEG
+    row = {
+        "time": sample.time,
+        "vehicle_id": sample.vehicle_id,
+        "speed_kmh": sample.speed_kmh,
+        "accel_ms2": sample.accel_ms2,
+        "brake": sample.brake,
+        "steering_var": sample.steering_var,
+        "lat": sample.lat,
+        "lon": sample.lon,
+        "heading_deg": sample.heading_deg,
+        "behavior": sample.behavior.value,
+        "alert": sample.alert.value,
+        "source": sample.source.value,
+        "alert_score": sample.alert_score,
+    }
+    moved = dict(row)
+    moved["lat"] = moved_lat
+    try:
+        assert geo.corridor_cell(sample.lat, sample.lon) != geo.corridor_cell(moved_lat, sample.lon)
+        assert hydrate_rows([row, moved], [], probe=True) is True
+        assert held == [False, False]
+        restored = next(
+            item for item in vehicles_snapshot() if item["vehicle_id"] == sample.vehicle_id
+        )
+        assert restored["zone"] == 0.4
+        assert restored["nearest_zone"] == "TKY-C1-01"
+        assert restored["lat"] == moved_lat
+    finally:
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+        reset_store()
+
+
 def test_hydrate_db_error_disables_persist(monkeypatch) -> None:
     set_persist(True)
 

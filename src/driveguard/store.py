@@ -306,6 +306,12 @@ def hydrate_rows(
         _RESTORED = False
         return False
     _ensure_scorers()
+    if zone_hits is None and samples:
+        zone_hits = {}
+        for sample in samples:
+            key = (float(sample.lat), float(sample.lon))
+            if key not in zone_hits:
+                zone_hits[key] = zone_risk(sample.lat, sample.lon)
     with _LOCK:
         _TELEM.clear()
         _SCORES.clear()

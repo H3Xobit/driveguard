@@ -94,6 +94,13 @@ def _score_into_buffers(
     buf = _TELEM[sample.vehicle_id]
     buf.append(sample)
     samples = list(buf)
+    if (
+        resolved is not None
+        and buf.maxlen is not None
+        and len(samples) == buf.maxlen
+        and len(resolved) == len(samples) + 1
+    ):
+        resolved = resolved[1:]
     if resolved is not None and len(resolved) == len(samples):
         zone, zone_id = resolved[-1]
         zones = [item[0] for item in resolved]

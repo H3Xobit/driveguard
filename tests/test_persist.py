@@ -323,6 +323,40 @@ def test_changed_trail_retries_outside_the_desk_lock(monkeypatch) -> None:
         reset_store()
 
 
+def test_full_trail_resolves_zones_outside_the_desk_lock(monkeypatch) -> None:
+    from driveguard.store import _LOCK, _TELEM, ingest_sample, reset_store
+
+    held: list[bool] = []
+    sample = next(iter(iter_session(duration=1, inject=None)))
+    moved = sample.model_copy(update={"lat": sample.lat + 0.01})
+
+    def fake_zone(lat: float, lon: float) -> tuple[float, str | None]:
+        held.append(_LOCK.locked())
+        if lat == moved.lat:
+            return 0.4, "TKY-C1-01"
+        return 0.1, "OLD"
+
+    monkeypatch.setattr("driveguard.store.zone_risk", fake_zone)
+    from driveguard.risk.temporal import score_window
+
+    score_window([sample], [0.0])
+    reset_store()
+    trail = _TELEM[sample.vehicle_id]
+    for _ in range(trail.maxlen):
+        trail.append(sample)
+    try:
+        result = ingest_sample(moved)
+        assert held
+        assert all(flag is False for flag in held)
+        assert len(trail) == trail.maxlen
+        assert trail[-1].lat == moved.lat
+        assert result["score"]["lat"] == moved.lat
+        assert result["score"]["zone"] == 0.4
+        assert result["score"]["nearest_zone"] == "TKY-C1-01"
+    finally:
+        reset_store()
+
+
 def test_bad_mqtt_payload_is_skipped() -> None:
     from driveguard.ingestion.consumer import handle_payload
     from driveguard.store import reset_store

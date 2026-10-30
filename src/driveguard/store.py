@@ -151,20 +151,17 @@ def ingest_sample(sample: TelemetrySample) -> dict[str, Any]:
     _ensure_scorers()
     scored: dict[str, Any] | None = None
     incident: Incident | None = None
-    for _ in range(2):
+    while scored is None:
         with _LOCK:
             coords = _trail_coords(sample.vehicle_id)
         resolved = [zone_risk(lat, lon) for lat, lon in coords]
         resolved.append(zone_risk(sample.lat, sample.lon))
         with _LOCK:
-            if _trail_coords(sample.vehicle_id) == coords:
-                scored, incident = _score_into_buffers(
-                    sample, emit_incident=True, resolved=resolved
-                )
-                break
-    if scored is None:
-        with _LOCK:
-            scored, incident = _score_into_buffers(sample, emit_incident=True)
+            if _trail_coords(sample.vehicle_id) != coords:
+                continue
+            scored, incident = _score_into_buffers(
+                sample, emit_incident=True, resolved=resolved
+            )
     result = {
         "score": scored,
         "incident": incident.model_dump(mode="json") if incident else None,

@@ -285,6 +285,44 @@ def test_ingest_resolves_zones_outside_the_desk_lock(monkeypatch) -> None:
         reset_store()
 
 
+def test_changed_trail_retries_outside_the_desk_lock(monkeypatch) -> None:
+    from driveguard import geo
+    from driveguard.store import _LOCK, _TELEM, ingest_sample, reset_store
+
+    held: list[bool] = []
+    planted = {"done": False}
+
+    def fake_hit(_lat: float, _lon: float) -> tuple[float, str | None]:
+        held.append(_LOCK.locked())
+        if not planted["done"]:
+            planted["done"] = True
+            _TELEM[sample.vehicle_id].append(other)
+        return 0.4, "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    sample = next(iter(iter_session(duration=1, inject=None)))
+    from driveguard.risk.temporal import score_window
+
+    score_window([sample], [0.0])
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    reset_store()
+    other = sample.model_copy(update={"lat": sample.lat + 20 / geo._M_PER_DEG})
+    try:
+        result = ingest_sample(sample)
+        assert held
+        assert all(flag is False for flag in held)
+        trail = list(_TELEM[sample.vehicle_id])
+        assert [item.lat for item in trail] == [other.lat, sample.lat]
+        assert result["score"]["lat"] == sample.lat
+        assert result["score"]["zone"] == 0.4
+        assert result["score"]["nearest_zone"] == "TKY-C1-01"
+    finally:
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+        reset_store()
+
+
 def test_bad_mqtt_payload_is_skipped() -> None:
     from driveguard.ingestion.consumer import handle_payload
     from driveguard.store import reset_store

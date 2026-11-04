@@ -34,3 +34,17 @@ def test_inject_cas_code() -> None:
     assert len(listed.json()) >= 1
     stats = client.get("/stats")
     assert "cas_hmw" in stats.json()["alerts"]
+
+
+def test_negative_desk_limit_is_rejected() -> None:
+    seeded = client.post("/simulate/inject", params={"type": "cas_hmw"})
+    assert seeded.status_code == 200
+    assert client.get("/scores", params={"limit": -1}).status_code == 422
+    assert client.get("/incidents", params={"limit": -1}).status_code == 422
+    scores = client.get("/scores", params={"limit": 1})
+    incidents = client.get("/incidents", params={"limit": 1})
+    assert scores.status_code == 200
+    assert incidents.status_code == 200
+    assert len(scores.json()) == 1
+    assert len(incidents.json()) == 1
+    assert scores.json()[0]["vehicle_id"] == seeded.json()["score"]["vehicle_id"]

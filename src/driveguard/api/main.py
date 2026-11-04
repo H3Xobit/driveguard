@@ -7,7 +7,7 @@ import json
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
@@ -115,12 +115,12 @@ def vehicles() -> list[dict]:
 
 
 @app.get("/scores")
-def scores(limit: int = 40) -> list[dict]:
+def scores(limit: int = Query(default=40, ge=0)) -> list[dict]:
     return list_scores(limit=limit)
 
 
 @app.get("/incidents")
-def incidents(limit: int = 20) -> list[dict]:
+def incidents(limit: int = Query(default=20, ge=0)) -> list[dict]:
     return [i.model_dump(mode="json") for i in list_incidents(limit=limit)]
 
 

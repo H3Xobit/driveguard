@@ -87,11 +87,9 @@ def _zone_for(
 def _score_into_buffers(
     sample: TelemetrySample,
     *,
-    emit_incident: bool,
     zone_hits: dict[tuple[float, float], tuple[float, str | None]] | None = None,
     resolved: list[tuple[float, str | None]] | None = None,
-) -> tuple[dict[str, Any], Incident | None]:
-    settings = get_settings()
+) -> dict[str, Any]:
     buf = _TELEM[sample.vehicle_id]
     buf.append(sample)
     samples = list(buf)
@@ -124,23 +122,33 @@ def _score_into_buffers(
         scored["compounding"] = True
     _SCORES.appendleft(scored)
     _LATEST[sample.vehicle_id] = scored
-    incident = None
-    if emit_incident and float(scored["fused"]) >= settings.risk_warn:
-        incident = narrate_incident(
-            vehicle_id=sample.vehicle_id,
-            behavior=sample.behavior,
-            fused=float(scored["fused"]),
-            severity=Severity(scored["severity"]),
-            lat=sample.lat,
-            lon=sample.lon,
-            zone_name=zone_id,
-            compounding=bool(scored["compounding"]),
-            alert=sample.alert,
-            alert_score_value=sample.alert_score,
-            source=sample.source,
-        )
+    return scored
+
+
+def _publish_incident(sample: TelemetrySample, scored: dict[str, Any]) -> Incident | None:
+    """Write the note after the desk lock is released. Skip it if that score is gone."""
+    settings = get_settings()
+    fused = scored["fused"]
+    if not isinstance(fused, float) or fused < settings.risk_warn:
+        return None
+    incident = narrate_incident(
+        vehicle_id=sample.vehicle_id,
+        behavior=sample.behavior,
+        fused=fused,
+        severity=Severity(scored["severity"]),
+        lat=sample.lat,
+        lon=sample.lon,
+        zone_name=scored["nearest_zone"],
+        compounding=bool(scored["compounding"]),
+        alert=sample.alert,
+        alert_score_value=sample.alert_score,
+        source=sample.source,
+    )
+    with _LOCK:
+        if scored not in _SCORES:
+            return None
         _INCIDENTS.appendleft(incident)
-    return scored, incident
+    return incident
 
 
 def _trail_coords(vehicle_id: str) -> list[tuple[float, float]]:
@@ -161,7 +169,6 @@ def ingest_sample(sample: TelemetrySample) -> dict[str, Any] | None:
     """
     _ensure_scorers()
     scored: dict[str, Any] | None = None
-    incident: Incident | None = None
     for _ in range(_TRAIL_TRIES):
         with _LOCK:
             coords = _trail_coords(sample.vehicle_id)
@@ -170,12 +177,11 @@ def ingest_sample(sample: TelemetrySample) -> dict[str, Any] | None:
         with _LOCK:
             if _trail_coords(sample.vehicle_id) != coords:
                 continue
-            scored, incident = _score_into_buffers(
-                sample, emit_incident=True, resolved=resolved
-            )
+            scored = _score_into_buffers(sample, resolved=resolved)
             break
     if scored is None:
         return None
+    incident = _publish_incident(sample, scored)
     result = {
         "score": scored,
         "incident": incident.model_dump(mode="json") if incident else None,
@@ -332,7 +338,7 @@ def hydrate_rows(
         _INCIDENTS.clear()
         _LATEST.clear()
         for sample in samples:
-            _score_into_buffers(sample, emit_incident=False, zone_hits=zone_hits)
+            _score_into_buffers(sample, zone_hits=zone_hits)
         for incident in reversed(incidents):
             _INCIDENTS.appendleft(incident)
     _RESTORED = True

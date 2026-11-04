@@ -432,6 +432,69 @@ def test_full_trail_resolves_zones_outside_the_desk_lock(monkeypatch) -> None:
         reset_store()
 
 
+def _high_score(samples, zones):
+    return {
+        "temporal": 0.9,
+        "zone": zones[-1] if zones else 0.0,
+        "fused": 0.9,
+        "baseline_rf": 0.2,
+        "compounding": False,
+        "nearest_zone": None,
+        "severity": "warn",
+    }
+
+
+def test_incident_note_stays_off_the_desk_lock(monkeypatch) -> None:
+    from driveguard.store import _LOCK, ingest_sample, list_incidents, reset_store
+
+    held: list[bool] = []
+    sample = next(iter(iter_session(duration=1, inject=None)))
+
+    def fake_retrieve(_query: str, top_k: int = 4) -> list[dict]:
+        held.append(_LOCK.locked())
+        return []
+
+    from driveguard.risk.temporal import score_window
+
+    score_window([sample], [0.0])
+    reset_store()
+    monkeypatch.setattr("driveguard.store.score_window", _high_score)
+    monkeypatch.setattr("driveguard.llm.narrative.retrieve", fake_retrieve)
+    try:
+        result = ingest_sample(sample)
+        assert held == [False]
+        assert result is not None
+        assert result["incident"] is not None
+        assert result["incident"]["vehicle_id"] == sample.vehicle_id
+        assert list_incidents()[0].vehicle_id == sample.vehicle_id
+    finally:
+        reset_store()
+
+
+def test_cleared_score_does_not_keep_the_incident(monkeypatch) -> None:
+    from driveguard.store import ingest_sample, list_incidents, reset_store
+
+    sample = next(iter(iter_session(duration=1, inject=None)))
+
+    def wipe_retrieve(_query: str, top_k: int = 4) -> list[dict]:
+        reset_store()
+        return []
+
+    from driveguard.risk.temporal import score_window
+
+    score_window([sample], [0.0])
+    reset_store()
+    monkeypatch.setattr("driveguard.store.score_window", _high_score)
+    monkeypatch.setattr("driveguard.llm.narrative.retrieve", wipe_retrieve)
+    try:
+        result = ingest_sample(sample)
+        assert result is not None
+        assert result["incident"] is None
+        assert list_incidents() == []
+    finally:
+        reset_store()
+
+
 def test_bad_mqtt_payload_is_skipped() -> None:
     from driveguard.ingestion.consumer import handle_payload
     from driveguard.store import reset_store

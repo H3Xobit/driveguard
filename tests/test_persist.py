@@ -323,6 +323,81 @@ def test_changed_trail_retries_outside_the_desk_lock(monkeypatch) -> None:
         reset_store()
 
 
+def test_trail_that_settles_within_the_limit_is_scored(monkeypatch) -> None:
+    from driveguard.store import _LOCK, _TELEM, _TRAIL_TRIES, ingest_sample, reset_store
+
+    held: list[bool] = []
+    moves = {"left": _TRAIL_TRIES - 1}
+    sample = next(iter(iter_session(duration=1, inject=None)))
+
+    def fake_zone(lat: float, _lon: float) -> tuple[float, str | None]:
+        held.append(_LOCK.locked())
+        if lat == sample.lat and moves["left"] > 0:
+            moves["left"] -= 1
+            shifted = sample.model_copy(update={"lat": sample.lat + moves["left"] + 1})
+            _TELEM[sample.vehicle_id].append(shifted)
+        return 0.4, "TKY-C1-01"
+
+    from driveguard.risk.temporal import score_window
+
+    score_window([sample], [0.0])
+    reset_store()
+    monkeypatch.setattr("driveguard.store.zone_risk", fake_zone)
+    try:
+        result = ingest_sample(sample)
+        assert moves["left"] == 0
+        assert held
+        assert all(flag is False for flag in held)
+        assert result is not None
+        trail = list(_TELEM[sample.vehicle_id])
+        assert trail[-1] is sample
+        assert result["score"]["lat"] == sample.lat
+        assert result["score"]["zone"] == 0.4
+    finally:
+        reset_store()
+
+
+def test_busy_trail_is_left_out_of_the_desk(monkeypatch) -> None:
+    from driveguard.store import _LOCK, _TELEM, _TRAIL_TRIES, ingest_sample, reset_store
+
+    held: list[bool] = []
+    sample_lookups = {"n": 0}
+    sample = next(iter(iter_session(duration=1, inject=None)))
+
+    def fake_zone(lat: float, _lon: float) -> tuple[float, str | None]:
+        held.append(_LOCK.locked())
+        if lat == sample.lat:
+            sample_lookups["n"] += 1
+            shifted = sample.model_copy(update={"lat": sample.lat + sample_lookups["n"]})
+            _TELEM[sample.vehicle_id].append(shifted)
+        return 0.2, "TKY-C1-01"
+
+    from driveguard.risk.temporal import score_window
+
+    score_window([sample], [0.0])
+    reset_store()
+    monkeypatch.setattr("driveguard.store.zone_risk", fake_zone)
+    set_persist(True)
+    persisted: list[str] = []
+
+    def record_persist(*_args, **_kwargs) -> None:
+        persisted.append("row")
+
+    monkeypatch.setattr("driveguard.db.persist_ingest", record_persist)
+    try:
+        result = ingest_sample(sample)
+        assert result is None
+        assert sample_lookups["n"] == _TRAIL_TRIES
+        assert held
+        assert all(flag is False for flag in held)
+        trail = list(_TELEM[sample.vehicle_id])
+        assert all(item.lat != sample.lat for item in trail)
+        assert persisted == []
+    finally:
+        set_persist(False)
+        reset_store()
+
+
 def test_full_trail_resolves_zones_outside_the_desk_lock(monkeypatch) -> None:
     from driveguard.store import _LOCK, _TELEM, ingest_sample, reset_store
 

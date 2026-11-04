@@ -22,6 +22,7 @@ from driveguard.risk.temporal import score_window
 from driveguard.settings import get_settings
 
 _LOCK = Lock()
+_TRAIL_TRIES = 8
 _TELEM: dict[str, deque[TelemetrySample]] = defaultdict(lambda: deque(maxlen=256))
 _SCORES: deque[dict[str, Any]] = deque(maxlen=200)
 _INCIDENTS: deque[Incident] = deque(maxlen=80)
@@ -153,12 +154,15 @@ def _ensure_scorers() -> None:
     _ensure_models()
 
 
-def ingest_sample(sample: TelemetrySample) -> dict[str, Any]:
-    """Score one sample. Corridor lookups run outside the desk lock."""
+def ingest_sample(sample: TelemetrySample) -> dict[str, Any] | None:
+    """Score one sample. Corridor lookups run outside the desk lock.
+
+    A trail that is still moving after a few tries is left unchanged.
+    """
     _ensure_scorers()
     scored: dict[str, Any] | None = None
     incident: Incident | None = None
-    while scored is None:
+    for _ in range(_TRAIL_TRIES):
         with _LOCK:
             coords = _trail_coords(sample.vehicle_id)
         resolved = [zone_risk(lat, lon) for lat, lon in coords]
@@ -169,6 +173,9 @@ def ingest_sample(sample: TelemetrySample) -> dict[str, Any]:
             scored, incident = _score_into_buffers(
                 sample, emit_incident=True, resolved=resolved
             )
+            break
+    if scored is None:
+        return None
     result = {
         "score": scored,
         "incident": incident.model_dump(mode="json") if incident else None,

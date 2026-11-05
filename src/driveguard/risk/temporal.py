@@ -30,7 +30,7 @@ def _clip01(x: float) -> float:
 def sample_vector(sample: TelemetrySample, prev: TelemetrySample | None, zone: float) -> np.ndarray:
     heading_delta = 0.0
     if prev is not None:
-        raw = abs(sample.heading_deg - prev.heading_deg)
+        raw = abs(sample.heading_deg - prev.heading_deg) % 360.0
         heading_delta = min(raw, 360.0 - raw)
     return np.array(
         [

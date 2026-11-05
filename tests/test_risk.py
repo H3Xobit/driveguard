@@ -1,6 +1,6 @@
 from driveguard.geo import ASSETS, haversine_m, zone_risk
 from driveguard.models import BehaviorTag
-from driveguard.risk.temporal import fuse, heuristic_temporal, window_matrix
+from driveguard.risk.temporal import FEATURE_NAMES, fuse, heuristic_temporal, window_matrix
 from driveguard.simulator.session import iter_session
 
 
@@ -53,3 +53,16 @@ def test_eval_note_names_the_corridor(monkeypatch) -> None:
     monkeypatch.setattr("driveguard.eval_harness.compare_snapshot_models", lambda *_a, **_k: [])
     run(smoke_n=1)
     assert seen == ["TKY-C1-01"]
+
+
+def test_heading_delta_wraps_past_a_full_circle() -> None:
+    base = next(iter(iter_session(duration=1, inject=None)))
+    start = base.model_copy(update={"heading_deg": 10.0})
+    extra_turn = base.model_copy(update={"heading_deg": 380.0})
+    north = base.model_copy(update={"heading_deg": 350.0})
+    just_east = base.model_copy(update={"heading_deg": 10.0})
+    column = FEATURE_NAMES.index("heading_delta_n")
+    spun = window_matrix([start, extra_turn], [0.0, 0.0])
+    wrapped = window_matrix([north, just_east], [0.0, 0.0])
+    assert spun[-1, column] == 10.0 / 45.0
+    assert wrapped[-1, column] == 20.0 / 45.0

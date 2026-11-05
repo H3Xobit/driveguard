@@ -60,8 +60,18 @@ class _CellLookup:
 _LOOKUPS: dict[tuple[int, int], _CellLookup] = {}
 
 
+def _touch_cell(key: tuple[int, int]) -> tuple[float, str | None]:
+    """Move a cached cell to the newest end. Caller holds _ZONE_LOCK."""
+    hit = _ZONE_HITS.pop(key)
+    _ZONE_HITS[key] = hit
+    return hit
+
+
 def _store_cell(key: tuple[int, int], hit: tuple[float, str | None]) -> None:
-    """Store one PostGIS cell. Caller holds _ZONE_LOCK. Drops the oldest cells past the cap."""
+    """Store one PostGIS cell. Caller holds _ZONE_LOCK.
+
+    Drops the least recently used cells past the cap.
+    """
     _ZONE_HITS[key] = hit
     _ZONE_FALLBACKS.pop(key, None)
     while len(_ZONE_HITS) > _CACHE_CAP:
@@ -221,9 +231,8 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
     probe_at: float | None = None
     quiet_token: int | None = None
     with _ZONE_LOCK:
-        cached = _ZONE_HITS.get(key)
-        if cached is not None:
-            return cached
+        if key in _ZONE_HITS:
+            return _touch_cell(key)
         fallback = _fresh_fallback(key)
         if fallback is not None:
             return fallback
@@ -282,9 +291,8 @@ def zone_risk(lat: float, lon: float) -> tuple[float, str | None]:
             failed = True
             hit = _zone_risk_haversine(lat, lon)
         with _ZONE_LOCK:
-            existing = _ZONE_HITS.get(key)
-            if existing is not None:
-                hit = existing
+            if key in _ZONE_HITS:
+                hit = _touch_cell(key)
             elif failed:
                 owns_probe = probe_at is not None and _POSTGIS_PROBE_AT == probe_at
                 if owns_probe or (probe_at is None and not _quiet_active()):

@@ -30,3 +30,26 @@ def test_compounding_boost() -> None:
     plain, _ = fuse(0.7, 0.1)
     assert flag is True
     assert fused > plain
+
+
+def test_eval_note_names_the_corridor(monkeypatch) -> None:
+    from driveguard.eval_harness import run
+    from driveguard.llm.narrative import narrate_incident
+
+    base = next(iter(iter_session(duration=1, inject=None)))
+    sample = base.model_copy(update={"lat": 35.683, "lon": 139.776})
+    seen: list[str | None] = []
+
+    def fake_iter(**_kwargs):
+        return iter([sample])
+
+    def spy_narrate(**kwargs):
+        seen.append(kwargs["zone_name"])
+        return narrate_incident(**kwargs)
+
+    monkeypatch.setattr("driveguard.eval_harness.iter_session", fake_iter)
+    monkeypatch.setattr("driveguard.eval_harness.narrate_incident", spy_narrate)
+    monkeypatch.setattr("driveguard.eval_harness.synth_windows", lambda n=80, seed=7: ([], []))
+    monkeypatch.setattr("driveguard.eval_harness.compare_snapshot_models", lambda *_a, **_k: [])
+    run(smoke_n=1)
+    assert seen == ["TKY-C1-01"]

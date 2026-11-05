@@ -29,7 +29,8 @@ def run(smoke_n: int | None = None) -> dict:
     for i, case in enumerate(golden):
         tag = BehaviorTag(case["behavior"])
         samples = list(iter_session(duration=32, inject=tag, seed=100 + i))
-        zones = [zone_risk(s.lat, s.lon)[0] for s in samples]
+        zone_pairs = [zone_risk(s.lat, s.lon) for s in samples]
+        zones = [risk for risk, _name in zone_pairs]
         scored = score_window(samples, zones)
         fused = float(scored["fused"])
         pred_high = fused >= settings.risk_warn
@@ -43,8 +44,7 @@ def run(smoke_n: int | None = None) -> dict:
         else:
             fn += 1
         last = samples[-1]
-        zone_id = scored.get("nearest_zone")
-        zone_name = zone_id if isinstance(zone_id, str) else None
+        zone_name = zone_pairs[-1][1]
         incident = narrate_incident(
             vehicle_id=last.vehicle_id,
             behavior=tag,

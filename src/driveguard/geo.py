@@ -114,7 +114,10 @@ def _postgis_paused() -> bool:
 
 
 def _fresh_fallback(key: tuple[int, int]) -> tuple[float, str | None] | None:
-    """Return a haversine fallback still inside its age. Caller holds _ZONE_LOCK."""
+    """Return a haversine fallback still inside its age. Caller holds _ZONE_LOCK.
+
+    A young entry moves to the newest end so the cap can drop a quiet cell.
+    """
     found = _ZONE_FALLBACKS.get(key)
     if found is None:
         return None
@@ -122,6 +125,8 @@ def _fresh_fallback(key: tuple[int, int]) -> tuple[float, str | None] | None:
     if _now() - stored >= _FALLBACK_AGE_S:
         del _ZONE_FALLBACKS[key]
         return None
+    kept = _ZONE_FALLBACKS.pop(key)
+    _ZONE_FALLBACKS[key] = kept
     return hit
 
 
@@ -134,6 +139,7 @@ def _store_fallback(
     """Remember a haversine fallback. Caller holds _ZONE_LOCK.
 
     until makes the result expire at that instant instead of a full age from now.
+    Drops the oldest fallbacks past the cap. Hits in _ZONE_HITS stay put.
     """
     now = _now()
     stored = now if until is None else until - _FALLBACK_AGE_S
@@ -145,6 +151,10 @@ def _store_fallback(
     for cell in stale:
         del _ZONE_FALLBACKS[cell]
     _ZONE_FALLBACKS[key] = (hit, stored)
+    kept = _ZONE_FALLBACKS.pop(key)
+    _ZONE_FALLBACKS[key] = kept
+    while len(_ZONE_FALLBACKS) > _CACHE_CAP:
+        del _ZONE_FALLBACKS[next(iter(_ZONE_FALLBACKS))]
 
 
 def corridor_cell(lat: float, lon: float) -> tuple[int, int]:

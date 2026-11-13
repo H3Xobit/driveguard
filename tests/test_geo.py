@@ -499,6 +499,162 @@ def test_quiet_window_failure_does_not_pause_other_cells(monkeypatch) -> None:
         geo.set_geo_backend(False)
 
 
+def test_quiet_fallback_cap_drops_oldest_cell(monkeypatch) -> None:
+    import threading
+
+    from driveguard import geo
+
+    calls: list[float] = []
+    clock = {"now": 1000.0}
+    entered = threading.Event()
+    release = threading.Event()
+
+    def fake_hit(lat: float, _lon: float) -> tuple[float, str | None]:
+        calls.append(lat)
+        if len(calls) == 1:
+            raise RuntimeError("postgis down")
+        if len(calls) == 2:
+            return 0.55, "TKY-C1-01"
+        entered.set()
+        assert release.wait(2)
+        return 0.4, "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    monkeypatch.setattr(geo, "_now", lambda: clock["now"])
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    cap = geo._CACHE_CAP
+    geo._CACHE_CAP = 2
+    lat0 = 35.683
+    lon = 139.776
+    probe = lat0 + 20 / geo._M_PER_DEG
+    held = lat0 + 40 / geo._M_PER_DEG
+    lats = [lat0 + (60 + 20 * i) / geo._M_PER_DEG for i in range(3)]
+    thread = threading.Thread(target=lambda: geo.zone_risk(held, lon))
+    try:
+        points = (lat0, probe, held, *lats)
+        assert len({geo.corridor_cell(lat, lon) for lat in points}) == 6
+        geo.zone_risk(lat0, lon)
+        clock["now"] = 1000.0 + geo._FALLBACK_AGE_S
+        assert geo.zone_risk(probe, lon) == (0.55, "TKY-C1-01")
+        thread.start()
+        assert entered.wait(2)
+        for lat in lats:
+            assert geo.zone_risk(lat, lon) == geo._zone_risk_haversine(lat, lon)
+        assert calls == [lat0, probe, held]
+        quiet = [geo.corridor_cell(lat, lon) for lat in lats]
+        assert list(geo._ZONE_FALLBACKS) == [quiet[1], quiet[2]]
+        assert geo.corridor_cell(probe, lon) in geo._ZONE_HITS
+        assert len(geo._ZONE_HITS) == 1
+    finally:
+        release.set()
+        thread.join(timeout=2)
+        geo._CACHE_CAP = cap
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+
+
+def test_reused_quiet_fallback_survives_cap(monkeypatch) -> None:
+    import threading
+
+    from driveguard import geo
+
+    calls: list[float] = []
+    clock = {"now": 1000.0}
+    entered = threading.Event()
+    release = threading.Event()
+
+    def fake_hit(lat: float, _lon: float) -> tuple[float, str | None]:
+        calls.append(lat)
+        if len(calls) == 1:
+            raise RuntimeError("postgis down")
+        if len(calls) == 2:
+            return 0.55, "TKY-C1-01"
+        entered.set()
+        assert release.wait(2)
+        return 0.4, "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    monkeypatch.setattr(geo, "_now", lambda: clock["now"])
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    cap = geo._CACHE_CAP
+    geo._CACHE_CAP = 2
+    lat0 = 35.683
+    lon = 139.776
+    probe = lat0 + 20 / geo._M_PER_DEG
+    held = lat0 + 40 / geo._M_PER_DEG
+    lats = [lat0 + (60 + 20 * i) / geo._M_PER_DEG for i in range(3)]
+    thread = threading.Thread(target=lambda: geo.zone_risk(held, lon))
+    try:
+        points = (lat0, probe, held, *lats)
+        assert len({geo.corridor_cell(lat, lon) for lat in points}) == 6
+        geo.zone_risk(lat0, lon)
+        clock["now"] = 1000.0 + geo._FALLBACK_AGE_S
+        assert geo.zone_risk(probe, lon) == (0.55, "TKY-C1-01")
+        thread.start()
+        assert entered.wait(2)
+        skipped = [geo._zone_risk_haversine(lat, lon) for lat in lats]
+        assert geo.zone_risk(lats[0], lon) == skipped[0]
+        assert geo.zone_risk(lats[1], lon) == skipped[1]
+        quiet = [geo.corridor_cell(lat, lon) for lat in lats]
+        assert list(geo._ZONE_FALLBACKS) == [quiet[0], quiet[1]]
+        before = len(calls)
+        assert geo.zone_risk(lats[0], lon) == skipped[0]
+        assert len(calls) == before
+        assert list(geo._ZONE_FALLBACKS) == [quiet[1], quiet[0]]
+        assert geo.zone_risk(lats[2], lon) == skipped[2]
+        assert len(calls) == before
+        assert list(geo._ZONE_FALLBACKS) == [quiet[0], quiet[2]]
+        assert geo.corridor_cell(probe, lon) in geo._ZONE_HITS
+    finally:
+        release.set()
+        thread.join(timeout=2)
+        geo._CACHE_CAP = cap
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+
+
+def test_paused_cell_skips_postgis_with_fallback_cap(monkeypatch) -> None:
+    from driveguard import geo
+
+    calls: list[float] = []
+    clock = {"now": 1000.0}
+
+    def fake_hit(lat: float, _lon: float) -> tuple[float, str | None]:
+        calls.append(lat)
+        if len(calls) == 1:
+            raise RuntimeError("postgis down")
+        return 0.55, "TKY-C1-01"
+
+    monkeypatch.setattr("driveguard.db.zone_hit_sql", fake_hit)
+    monkeypatch.setattr(geo, "_now", lambda: clock["now"])
+    geo.set_geo_backend(True)
+    geo.clear_zone_hits()
+    cap = geo._CACHE_CAP
+    geo._CACHE_CAP = 2
+    lat0 = 35.683
+    lon = 139.776
+    far = lat0 + 20 / geo._M_PER_DEG
+    farther = lat0 + 40 / geo._M_PER_DEG
+    try:
+        cells = [geo.corridor_cell(lat, lon) for lat in (lat0, far, farther)]
+        assert len(set(cells)) == 3
+        assert geo.zone_risk(lat0, lon) == geo._zone_risk_haversine(lat0, lon)
+        clock["now"] = 1000.0 + geo._FALLBACK_AGE_S - 0.1
+        assert geo.zone_risk(far, lon) == geo._zone_risk_haversine(far, lon)
+        assert geo.zone_risk(farther, lon) == geo._zone_risk_haversine(farther, lon)
+        assert calls == [lat0]
+        assert cells[0] in geo._ZONE_FALLBACKS
+        assert cells[1] not in geo._ZONE_FALLBACKS
+        assert cells[2] not in geo._ZONE_FALLBACKS
+        assert len(geo._ZONE_HITS) == 0
+    finally:
+        geo._CACHE_CAP = cap
+        geo.clear_zone_hits()
+        geo.set_geo_backend(False)
+
+
 def test_tokyo_c1_without_database() -> None:
     geo._BACKEND = "haversine"
     risk, name = zone_risk(35.683, 139.776)

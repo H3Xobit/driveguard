@@ -227,6 +227,21 @@ def test_load_startup_uses_one_connection(monkeypatch: pytest.MonkeyPatch) -> No
     assert hits == {}
 
 
+def test_load_startup_return_names_corridor_hits() -> None:
+    import typing
+    from typing import Any
+
+    from driveguard.db import load_startup
+
+    returned = typing.get_type_hints(load_startup)["return"]
+    assert typing.get_args(returned) == (
+        bool,
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        dict[tuple[float, float], tuple[float, str | None]],
+    )
+
+
 def test_zone_hits_on_one_query() -> None:
     from driveguard.db import zone_hits_on
 

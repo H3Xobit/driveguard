@@ -336,8 +336,15 @@ def fetch_recent_desk_rows(
 
 def load_startup(
     zones: list[Zone], per_vehicle: int = 32, limit: int = 80
-) -> tuple[bool, list[dict[str, Any]], list[dict[str, Any]]]:
-    """PostGIS check, zone seed, persist probe, and both recent queries on one connection."""
+) -> (
+    tuple[
+        bool,
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        dict[tuple[float, float], tuple[float, str | None]],
+    ]
+):
+    """PostGIS check, zone seed, persist probe, both recent queries, and corridor hits."""
     with connect() as conn:
         conn.execute("SELECT 1")
         ready = postgis_installed(conn)
